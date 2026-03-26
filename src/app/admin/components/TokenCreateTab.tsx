@@ -1,504 +1,786 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Coins, Wallet, Zap, CheckCircle, AlertCircle, ExternalLink, Copy, RefreshCw, Loader2, Lock } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import {
+    Plus, Zap, Gift, Percent, HardDrive, Tag,
+    Copy, RefreshCw, Loader2, Trash2, Edit2,
+    X, Shield, CheckCircle, Phone, Calendar,
+    Clock, ToggleLeft, ToggleRight, ChevronDown, 
+    Wallet, ArrowUpCircle, AlertTriangle, Lock
+} from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+
+type TokenType = 'discount' | 'storage' | 'offer' | 'off'
 
 interface TokenRecord {
     id: string
+    token_code: string
     name: string
-    symbol: string
-    supply: string
-    network: string
-    contract_address: string
-    tx_hash: string
-    status: 'active' | 'inactive'
+    token_type: TokenType
+    value: string
+    status: boolean
     expiry_date: string | null
+    expiry_time: string | null
     created_at: string
+    used_count: number
+    max_usages: number
+    admin_id: string | null
+    contact: string | null
 }
 
-const NETWORKS: Record<string, { name: string; explorer: string }> = {
-    '11155111': { name: 'Sepolia (Testnet)', explorer: 'https://sepolia.etherscan.io' },
-    '1': { name: 'Ethereum', explorer: 'https://etherscan.io' },
-    '137': { name: 'Polygon', explorer: 'https://polygonscan.com' },
-    '56': { name: 'BSC', explorer: 'https://bscscan.com' },
+const TYPE_CONFIG: Record<TokenType, { label: string; icon: any; color: string; bg: string; desc: string }> = {
+    discount: { label: 'Discount',  icon: Percent,    color: '#ec4899', bg: 'rgba(236,72,153,0.12)',   desc: '% or flat discount on pricing' },
+    storage:  { label: 'Storage',   icon: HardDrive,  color: '#3b82f6', bg: 'rgba(59,130,246,0.12)',   desc: 'Extra cloud storage (GB)' },
+    offer:    { label: 'Offer',     icon: Gift,       color: '#7c5cf6', bg: 'rgba(124,92,246,0.12)',   desc: 'Special feature unlock' },
+    off:      { label: 'Off',       icon: Tag,        color: '#f59e0b', bg: 'rgba(245,158,11,0.12)',   desc: 'Price reduction on plans' },
+}
+
+const emptyForm = {
+    name:  '',
+    token_type:  'discount' as TokenType,
+    value:       '10',
+    token_code:  '',
+    admin_id:    '',
+    max_usages: '100',
+    expiry_date: '',
+    expiry_time: '23:59',
+    contact:     '',
+    status:      true,
 }
 
 export default function TokenCreateTab() {
-    const [walletAddress, setWalletAddress] = useState<string | null>(null)
-    const [walletBalance, setWalletBalance] = useState<string>('0')
-    const [isConnected, setIsConnected] = useState(false)
-    const [deploying, setDeploying] = useState(false)
-    const [tokens, setTokens] = useState<TokenRecord[]>([])
-    const [copied, setCopied] = useState<string | null>(null)
-    const [toast, setToast] = useState('')
+    const router                        = useRouter()
+    const [form, setForm]               = useState({ ...emptyForm })
+    const [tokens, setTokens]           = useState<TokenRecord[]>([])
+    const [submitting, setSubmitting]   = useState(false)
+    const [editTarget, setEditTarget]   = useState<TokenRecord | null>(null)
+    const [copied, setCopied]           = useState<string | null>(null)
+    const [toast, setToast]             = useState<{ msg: string; ok: boolean } | null>(null)
+    const [balance, setBalance]         = useState<number>(0) // Primary Cash (INR)
+    const [tokenBalance, setTokenBalance] = useState<number>(0) // INF Tokens
+    const [user, setUser]               = useState<any>(null)
 
-    const [form, setForm] = useState({
-        name: '',
-        symbol: '',
-        supply: '1000000',
-        network: '11155111',
-        mintable: true,
-        burnable: true,
-        expirationDate: '',
-        status: 'active',
-    })
-
-    const showToast = (msg: string) => {
-        setToast(msg)
-        setTimeout(() => setToast(''), 3000)
+    /* ─── helpers ─────────────────────────────────────────── */
+    const showToast = (msg: string, ok = true) => {
+        setToast({ msg, ok })
+        setTimeout(() => setToast(null), 3500)
     }
 
-    const copyToClipboard = async (text: string, id: string) => {
-        try {
-            await navigator.clipboard.writeText(text)
-            setCopied(id)
-            setTimeout(() => setCopied(null), 2000)
-        } catch (err) {
-            console.error('Failed to copy:', err)
+    const f = (key: keyof typeof form, val: any) =>
+        setForm(prev => ({ ...prev, [key]: val }))
+
+    const generateCode = () => {
+        const prefix = form.token_type.toUpperCase().slice(0, 4)
+        const rand = (n: number) => {
+            const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+            return Array.from({ length: n }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
+        }
+        f('token_code', `${prefix}-${rand(4)}-${rand(4)}`)
+    }
+
+    /* ─── data ────────────────────────────────────────────── */
+    const loadTokens = async () => {
+        const { data } = await supabase
+            .from('promo_tokens')
+            .select('*')
+            .order('created_at', { ascending: false })
+        if (data) setTokens(data as TokenRecord[])
+    }
+
+    const fetchProfile = async () => {
+        const { data: { user: u } } = await supabase.auth.getUser()
+        if (!u) return
+        setUser(u)
+        
+        const { data: profile } = await supabase
+            .from('profiles')
+            .select('wallet_balance, token_balance')
+            .eq('id', u.id)
+            .single()
+        
+        if (profile) {
+            setBalance(Number(profile.wallet_balance) || 0)
+            setTokenBalance(Number(profile.token_balance) || 0)
         }
     }
 
-    // Load tokens from localStorage
-    const loadTokens = () => {
-        try {
-            const saved = localStorage.getItem('deployedTokens')
-            if (saved) {
-                const tokens = JSON.parse(saved)
-                setTokens(tokens)
-            }
-        } catch (err) {
-            console.warn('Could not load tokens:', err)
+    const rechargeWallet = async () => {
+        if (!user) return
+        
+        // RE-FETCH FRESH BALANCE: Ensure we don't overwrite new funds
+        const { data: latestProfile } = await supabase
+            .from('profiles')
+            .select('wallet_balance, token_balance')
+            .eq('id', user.id)
+            .single()
+        
+        const currentBal = Number(latestProfile?.wallet_balance) || 0
+        const currentTokens = Number(latestProfile?.token_balance) || 0
+
+        if (currentBal < 50) return showToast('Insufficient Primary Balance! Please add funds.', false)
+        
+        const spendAmount = 50 
+        const tokenAdd = 50 
+        
+        const newInrBal = currentBal - spendAmount
+        const newTokenBal = currentTokens + tokenAdd
+        
+        const { error } = await supabase
+            .from('profiles')
+            .update({ 
+                wallet_balance: newInrBal,
+                token_balance: newTokenBal 
+            })
+            .eq('id', user.id)
+        
+        if (!error) {
+            setBalance(newInrBal)
+            setTokenBalance(newTokenBal)
+            showToast(`Converted ₹${spendAmount} to ${tokenAdd} INF successfully!`)
+        } else {
+            showToast('Recharge failed', false)
         }
     }
 
-    // Toggle token status
-    const toggleTokenStatus = (id: string) => {
-        const saved = localStorage.getItem('deployedTokens')
-        if (saved) {
-            const tokens: TokenRecord[] = JSON.parse(saved)
-            const updated = tokens.map(t => 
-                t.id === id ? { ...t, status: (t.status === 'active' ? 'inactive' : 'active') as 'active' | 'inactive' } : t
-            )
-            localStorage.setItem('deployedTokens', JSON.stringify(updated))
-            setTokens(updated)
-            showToast('Token status updated')
-        }
-    }
-
-    // Delete token
-    const deleteToken = (id: string) => {
-        if (confirm('Are you sure you want to delete this token?')) {
-            const saved = localStorage.getItem('deployedTokens')
-            if (saved) {
-                const tokens: TokenRecord[] = JSON.parse(saved)
-                const updated = tokens.filter(t => t.id !== id)
-                localStorage.setItem('deployedTokens', JSON.stringify(updated))
-                setTokens(updated)
-                showToast('Token deleted')
-            }
-        }
-    }
-
-    useEffect(() => {
+    useEffect(() => { 
         loadTokens()
+        fetchProfile()
+
+        // REAL-TIME SYNC: Listen for wallet balance changes
+        let channel: any
+        const setupRealtime = async () => {
+            const { data: { user: u } } = await supabase.auth.getUser()
+            if (!u) return
+
+            channel = supabase
+                .channel(`wallet-sync-${u.id}`)
+                .on('postgres_changes', { 
+                    event: 'UPDATE', 
+                    schema: 'public', 
+                    table: 'profiles',
+                    filter: `id=eq.${u.id}`
+                }, (payload) => {
+                    const newBal = payload.new.wallet_balance
+                    const newTokenBal = payload.new.token_balance
+                    if (newBal !== undefined) setBalance(Number(newBal))
+                    if (newTokenBal !== undefined) setTokenBalance(Number(newTokenBal))
+                    console.log("Real-time balance updated:", { newBal, newTokenBal })
+                })
+                .subscribe()
+        }
+        setupRealtime()
+
+        return () => {
+            if (channel) supabase.removeChannel(channel)
+        }
     }, [])
 
-    // Connect wallet (simulated - no MetaMask required)
-    const connectWallet = async () => {
-        // Simulate wallet connection without MetaMask
-        try {
-            // Generate a fake but realistic-looking wallet address
-            const fakeAddress = '0x' + Array.from({ length: 40 }, () =>
-                Math.floor(Math.random() * 16).toString(16)
-            ).join('')
+    /* ─── submit ──────────────────────────────────────────── */
+    const handleSubmit = async () => {
+        if (!form.name.trim()) return showToast('Token name is required', false)
+        if (!form.admin_id.trim())  return showToast('Admin ID is required', false)
+        if (!form.expiry_date)      return showToast('Expiry date is required', false)
 
-            const fakeBalance = (Math.random() * 10).toFixed(4)
-
-            setWalletAddress(fakeAddress)
-            setWalletBalance(fakeBalance)
-            setIsConnected(true)
-            showToast('Wallet connected successfully! (Demo Mode)')
-        } catch (error) {
-            console.error('Failed to connect wallet:', error)
-            showToast('Failed to connect wallet')
-        }
-    }
-
-    // Disconnect wallet
-    const disconnectWallet = () => {
-        setWalletAddress(null)
-        setWalletBalance('0')
-        setIsConnected(false)
-        showToast('Wallet disconnected')
-    }
-
-    // Deploy token
-    const deployToken = async () => {
-        if (!form.name || form.name.length < 3) {
-            showToast('Token name must be at least 3 characters')
-            return
-        }
-        if (!form.symbol || form.symbol.length > 5) {
-            showToast('Token symbol must be 1-5 characters')
-            return
-        }
-        if (!isConnected || !walletAddress) {
-            showToast('Please connect your wallet first')
-            return
-        }
-
-        setDeploying(true)
-
-        try {
-            // Simulate deployment
-            await new Promise(resolve => setTimeout(resolve, 3000))
-
-            // Generate fake contract address and tx hash for demo
-            const contractAddress = '0x' + Array.from({ length: 40 }, () =>
-                Math.floor(Math.random() * 16).toString(16)
-            ).join('')
-
-            const txHash = '0x' + Array.from({ length: 64 }, () =>
-                Math.floor(Math.random() * 16).toString(16)
-            ).join('')
-
-            // Save to localStorage
-            const newToken = {
-                id: Date.now().toString(),
-                name: form.name,
-                symbol: form.symbol,
-                supply: form.supply,
-                network: form.network,
-                contract_address: contractAddress,
-                tx_hash: txHash,
-                status: form.status as 'active' | 'inactive',
-                expiry_date: form.expirationDate || null,
-                created_at: new Date().toISOString()
+        const code = form.token_code.trim() || (() => {
+            const prefix = form.token_type.toUpperCase().slice(0, 4)
+            const rand = (n: number) => {
+                const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+                return Array.from({ length: n }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
             }
-            const saved = localStorage.getItem('deployedTokens')
-            const tokens = saved ? JSON.parse(saved) : []
-            tokens.unshift(newToken)
-            localStorage.setItem('deployedTokens', JSON.stringify(tokens.slice(0, 20)))
+            return `${prefix}-${rand(4)}-${rand(4)}`
+        })()
 
-            // Reload tokens
-            await loadTokens()
+        // WALLET CHECK: 1 INF per token
+        if (!editTarget && tokenBalance < 1) {
+            return showToast('Insufficient INF balance! Please recharge tokens.', false)
+        }
 
-            // Reset form
-            setForm({
-                ...form,
-                name: '',
-                symbol: '',
-            })
+        setSubmitting(true)
+        try {
+            const payload = {
+                token_code:  code.toUpperCase(),
+                name:        form.name.trim(),
+                token_type:  form.token_type,
+                value:       form.value,
+                status:      form.status,
+                expiry_date: form.expiry_date || null,
+                expiry_time: form.expiry_time || null,
+                max_usages:  parseInt(form.max_usages) || 100,
+                admin_id:    form.admin_id.trim(),
+                contact:     form.contact.trim() || null,
+                user_id:     (await supabase.auth.getUser()).data.user?.id,
+            }
 
-            showToast(`Token ${form.name} deployed successfully!`)
-        } catch (err) {
-            console.error('Deployment failed:', err)
-            showToast('Deployment failed. Please try again.')
+            let err
+            if (editTarget) {
+                ({ error: err } = await supabase.from('promo_tokens').update(payload).eq('id', editTarget.id))
+            } else {
+                ({ error: err } = await supabase.from('promo_tokens').insert(payload))
+            }
+
+            if (err) throw err
+            
+            // DEDUCT TOKEN WALLET: Only for new tokens
+            if (!editTarget && user) {
+                const finalTokenBal = Math.max(0, tokenBalance - 1)
+                await supabase
+                    .from('profiles')
+                    .update({ token_balance: finalTokenBal })
+                    .eq('id', user.id)
+                setTokenBalance(finalTokenBal)
+                console.log("Token wallet deducted 1 INF. Remaining:", finalTokenBal)
+            }
+
+            showToast(editTarget ? 'Token updated ✓' : `Token created: ${code} (-1 INF)`)
+            setForm({ ...emptyForm })
+            setEditTarget(null)
+            loadTokens()
+        } catch (e: any) {
+            showToast(e.message || 'Error saving token', false)
         } finally {
-            setDeploying(false)
+            setSubmitting(false)
         }
     }
 
+    const handleWalletClick = async () => {
+        if (!user) return
+        if (balance < 50) return showToast('Insufficient balance! Need ₹50 to enter Payment Page.', false)
+        
+        const newBal = balance - 50
+        const { error } = await supabase
+            .from('profiles')
+            .update({ wallet_balance: newBal })
+            .eq('id', user.id)
+            
+        if (!error) {
+            setBalance(newBal)
+            showToast('Redirecting to Payment... ₹50 Deducted! 💸')
+            
+            // Navigate to Upgrade ("Payment") Page
+            setTimeout(() => {
+                router.push('/upgrade')
+            }, 800)
+        }
+    }
+
+    const handleEdit = (t: TokenRecord) => {
+        setEditTarget(t)
+        setForm({
+            name:        t.name,
+            token_type:  t.token_type,
+            value:       t.value,
+            token_code:  t.token_code,
+            admin_id:    t.admin_id || '',
+            max_usages:  String(t.max_usages),
+            expiry_date: t.expiry_date ? t.expiry_date.split('T')[0] : '',
+            expiry_time: t.expiry_time ? t.expiry_time.slice(0, 5) : '23:59',
+            contact:     t.contact || '',
+            status:      t.status,
+        })
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+    }
+
+    const handleDelete = async (id: string) => {
+        if (!confirm('Delete this token permanently?')) return
+        const { error } = await supabase.from('promo_tokens').delete().eq('id', id)
+        if (error) return showToast('Delete failed', false)
+        showToast('Token deleted')
+        loadTokens()
+    }
+
+    const copyCode = async (code: string) => {
+        await navigator.clipboard.writeText(code)
+        setCopied(code)
+        setTimeout(() => setCopied(null), 2000)
+    }
+
+    /* ─── stats ───────────────────────────────────────────── */
+    const active   = tokens.filter(t => t.status).length
+    const restricted = tokens.filter(t => t.admin_id).length
+
+    /* ─── render ──────────────────────────────────────────── */
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-            {/* Toast */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+
+            {/* ── Toast ── */}
             {toast && (
                 <div style={{
-                    position: 'fixed', top: 20, right: 20, zIndex: 1000,
-                    background: toast.includes('success') || toast.includes('deployed') ? 'rgba(52,211,153,0.95)' : 'rgba(239,68,68,0.95)',
-                    color: 'white', padding: '12px 20px', borderRadius: 8,
-                    fontSize: 14, fontWeight: 600, boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
+                    position: 'fixed', top: 24, right: 24, zIndex: 9999,
+                    background: toast.ok ? '#10b981' : '#ef4444',
+                    color: 'white', padding: '14px 24px', borderRadius: 12,
+                    fontSize: 14, fontWeight: 700,
+                    boxShadow: `0 12px 30px ${toast.ok ? 'rgba(16,185,129,0.35)' : 'rgba(239,68,68,0.35)'}`,
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    animation: 'slideIn 0.3s ease-out'
                 }}>
-                    {toast}
+                    <CheckCircle size={18} />
+                    {toast.msg}
                 </div>
             )}
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-                {/* Token Form */}
-                <div className="card">
-                    <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <Coins size={18} color="var(--accent-purple)" /> Create Token
-                    </h3>
+            {/* ── Top Layout: Form + Sidebar ── */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 24, alignItems: 'start' }}>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                        <div className="form-group">
-                            <label className="form-label">Token Name *</label>
-                            <input
-                                type="text"
-                                className="form-input"
-                                placeholder="MyToken"
-                                value={form.name}
-                                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                                maxLength={50}
-                            />
+                {/* ── CREATE / EDIT FORM ── */}
+                <div className="card" style={{
+                    border: editTarget
+                        ? '2px solid var(--accent-purple)'
+                        : '1px solid var(--border)',
+                }}>
+
+                    {/* Form header */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                            <div style={{
+                                width: 40, height: 40, borderRadius: 10,
+                                background: editTarget ? 'rgba(124,92,246,0.15)' : 'rgba(124,92,246,0.1)',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center'
+                            }}>
+                                {editTarget ? <Edit2 size={20} color="#7c5cf6" /> : <Plus size={22} color="#7c5cf6" />}
+                            </div>
+                            <div>
+                                <h3 style={{ fontSize: 17, fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>
+                                    {editTarget ? 'Edit Promo Token' : 'Create New Promo Token'}
+                                </h3>
+                                <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: 0 }}>
+                                    {editTarget ? `Editing: ${editTarget.token_code}` : 'Fill all required fields to generate a token'}
+                                </p>
+                            </div>
                         </div>
+                        {editTarget && (
+                            <button className="btn btn-secondary btn-sm" onClick={() => { setEditTarget(null); setForm({ ...emptyForm }) }}>
+                                <X size={14} /> Cancel
+                            </button>
+                        )}
+                    </div>
 
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
+
+                        {/* Row 1: Name + Token Type */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 }}>
                             <div className="form-group">
-                                <label className="form-label">Symbol *</label>
-                                <input
-                                    type="text"
-                                    className="form-input"
-                                    placeholder="MTK"
-                                    value={form.symbol}
-                                    onChange={(e) => setForm({ ...form, symbol: e.target.value.toUpperCase() })}
-                                    maxLength={5}
+                                <label className="form-label">Token Name <span style={{ color: '#ef4444' }}>*</span></label>
+                                <input type="text" className="form-input"
+                                    placeholder="e.g. Summer VIP Offer"
+                                    value={form.name}
+                                    onChange={e => f('name', e.target.value)}
                                 />
                             </div>
                             <div className="form-group">
-                                <label className="form-label">Total Supply</label>
-                                <input
-                                    type="number"
-                                    className="form-input"
-                                    placeholder="1000000"
-                                    value={form.supply}
-                                    onChange={(e) => setForm({ ...form, supply: e.target.value })}
+                                <label className="form-label">Token Type <span style={{ color: '#ef4444' }}>*</span></label>
+                                <select className="form-input" value={form.token_type}
+                                    onChange={e => f('token_type', e.target.value as TokenType)}>
+                                    {(Object.keys(TYPE_CONFIG) as TokenType[]).map(k => (
+                                        <option key={k} value={k}>{TYPE_CONFIG[k].label} — {TYPE_CONFIG[k].desc}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+
+                        {/* Token Type Preview */}
+                        <div style={{
+                            display: 'flex', alignItems: 'center', gap: 12,
+                            background: TYPE_CONFIG[form.token_type].bg,
+                            border: `1px solid ${TYPE_CONFIG[form.token_type].color}40`,
+                            borderRadius: 10, padding: '10px 16px'
+                        }}>
+                            {(() => { const Icon = TYPE_CONFIG[form.token_type].icon; return <Icon size={18} color={TYPE_CONFIG[form.token_type].color} /> })()}
+                            <span style={{ fontSize: 13, color: TYPE_CONFIG[form.token_type].color, fontWeight: 700 }}>
+                                {TYPE_CONFIG[form.token_type].label} Token — {TYPE_CONFIG[form.token_type].desc}
+                            </span>
+                        </div>
+
+                        {/* Row 2: Token Code + Value */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 }}>
+                            <div className="form-group">
+                                <label className="form-label">Token ID / Code <span style={{ color: '#ef4444' }}>*</span></label>
+                                <div style={{ display: 'flex', gap: 8 }}>
+                                    <input type="text" className="form-input"
+                                        placeholder="e.g. DISC-ABCD-1234"
+                                        value={form.token_code}
+                                        onChange={e => f('token_code', e.target.value.toUpperCase())}
+                                        style={{ fontWeight: 800, letterSpacing: '1px', flex: 1 }}
+                                    />
+                                    <button className="btn btn-secondary btn-sm" onClick={generateCode} title="Auto generate unique code">
+                                        <RefreshCw size={14} />
+                                    </button>
+                                </div>
+                                <p style={{ fontSize: 10, color: 'var(--text-muted)', margin: '4px 0 0 2px' }}>Leave blank to auto-generate</p>
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">
+                                    {form.token_type === 'discount' ? 'Discount %'
+                                    : form.token_type === 'storage'  ? 'Extra GB'
+                                    : form.token_type === 'off'      ? 'Price Off (₹)'
+                                    : 'Offer Value'}
+                                </label>
+                                <input type={form.token_type === 'offer' ? 'text' : 'number'} className="form-input"
+                                    placeholder={form.token_type === 'offer' ? 'e.g. Free 7-day Pro trial' : '10'}
+                                    value={form.value}
+                                    onChange={e => f('value', e.target.value)}
                                 />
                             </div>
                         </div>
 
-                        <div className="form-group">
-                            <label className="form-label">Network</label>
-                            <select
-                                className="form-input"
-                                value={form.network}
-                                onChange={(e) => setForm({ ...form, network: e.target.value })}
-                            >
-                                {Object.entries(NETWORKS).map(([id, net]) => (
-                                    <option key={id} value={id}>{net.name}</option>
-                                ))}
-                            </select>
-                        </div>
-
-                        <div className="form-group">
-                            <label className="form-label">Token Expiration (Optional)</label>
-                            <input
-                                type="date"
-                                className="form-input"
-                                value={form.expirationDate}
-                                onChange={(e) => setForm({ ...form, expirationDate: e.target.value })}
-                                min={new Date().toISOString().split('T')[0]}
-                            />
-                            <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
-                                Token will expire on this date (if set)
-                            </p>
-                        </div>
-
-                        <div className="form-group">
-                            <label className="form-label">Status</label>
-                            <select
-                                className="form-input"
-                                value={form.status}
-                                onChange={(e) => setForm({ ...form, status: e.target.value })}
-                            >
-                                <option value="active">Active</option>
-                                <option value="inactive">Inactive</option>
-                            </select>
-                            <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
-                                Inactive tokens won't work for users
-                            </p>
-                        </div>
-
-                        <div style={{ display: 'flex', gap: 12 }}>
-                            <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'var(--bg-primary)', borderRadius: 8, cursor: 'pointer' }}>
-                                <input
-                                    type="checkbox"
-                                    checked={form.mintable}
-                                    onChange={(e) => setForm({ ...form, mintable: e.target.checked })}
+                        {/* Row 3: Admin ID (Required) + Max Usages */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 }}>
+                            <div className="form-group">
+                                <label className="form-label" style={{ color: 'var(--accent-purple-light)' }}>
+                                    Admin ID ⚡ <span style={{ color: '#ef4444' }}>*</span>
+                                    <span style={{ marginLeft: 6, fontSize: 9, background: 'rgba(124,92,246,0.2)', color: '#a78bfa', padding: '2px 6px', borderRadius: 4, fontWeight: 700 }}>CONTROL KEY</span>
+                                </label>
+                                <input type="text" className="form-input"
+                                    placeholder="e.g. ADM-001"
+                                    value={form.admin_id}
+                                    onChange={e => f('admin_id', e.target.value)}
+                                    style={{ border: '1.5px solid rgba(124,92,246,0.4)' }}
                                 />
-                                <span style={{ fontSize: 13 }}>Mintable</span>
-                            </label>
-                            <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'var(--bg-primary)', borderRadius: 8, cursor: 'pointer' }}>
-                                <input
-                                    type="checkbox"
-                                    checked={form.burnable}
-                                    onChange={(e) => setForm({ ...form, burnable: e.target.checked })}
+                                <p style={{ fontSize: 10, color: '#a78bfa', margin: '4px 0 0 2px' }}>
+                                    🔐 Only users with this Admin ID can use this token
+                                </p>
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Max Usages <span style={{ color: '#ef4444' }}>*</span></label>
+                                <input type="number" className="form-input" min={1}
+                                    value={form.max_usages}
+                                    onChange={e => f('max_usages', e.target.value)}
                                 />
-                                <span style={{ fontSize: 13 }}>Burnable</span>
-                            </label>
+                            </div>
                         </div>
 
+                        {/* Row 4: Expiry Date + Expiry Time */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 }}>
+                            <div className="form-group">
+                                <label className="form-label">
+                                    <Calendar size={13} style={{ marginRight: 5, display: 'inline' }} />
+                                    Expiry Date <span style={{ color: '#ef4444' }}>*</span>
+                                </label>
+                                <input type="date" className="form-input"
+                                    value={form.expiry_date}
+                                    onChange={e => f('expiry_date', e.target.value)}
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">
+                                    <Clock size={13} style={{ marginRight: 5, display: 'inline' }} />
+                                    Expiry Time <span style={{ color: '#ef4444' }}>*</span>
+                                </label>
+                                <input type="time" className="form-input"
+                                    value={form.expiry_time}
+                                    onChange={e => f('expiry_time', e.target.value)}
+                                />
+                            </div>
+                        </div>
+
+                        {/* Row 5: Contact (optional) + Status toggle */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 }}>
+                            <div className="form-group">
+                                <label className="form-label">
+                                    <Phone size={13} style={{ marginRight: 5, display: 'inline' }} />
+                                    Contact <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>(optional)</span>
+                                </label>
+                                <input type="text" className="form-input"
+                                    placeholder="e.g. +91 98765 43210 or email"
+                                    value={form.contact}
+                                    onChange={e => f('contact', e.target.value)}
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Status</label>
+                                <div
+                                    onClick={() => f('status', !form.status)}
+                                    style={{
+                                        display: 'flex', alignItems: 'center', gap: 12,
+                                        padding: '0 16px', height: 42, borderRadius: 10,
+                                        border: `1.5px solid ${form.status ? '#10b981' : 'var(--border)'}`,
+                                        background: form.status ? 'rgba(16,185,129,0.08)' : 'var(--bg-secondary)',
+                                        cursor: 'pointer', userSelect: 'none', transition: 'all 0.2s'
+                                    }}
+                                >
+                                    {/* pill toggle */}
+                                    <div style={{
+                                        width: 44, height: 22, borderRadius: 20,
+                                        background: form.status ? '#10b981' : 'var(--border)',
+                                        position: 'relative', transition: 'background 0.2s', flexShrink: 0
+                                    }}>
+                                        <div style={{
+                                            width: 18, height: 18, borderRadius: '50%', background: 'white',
+                                            position: 'absolute', top: 2,
+                                            left: form.status ? 24 : 2,
+                                            transition: 'left 0.2s',
+                                            boxShadow: '0 1px 4px rgba(0,0,0,0.25)'
+                                        }} />
+                                    </div>
+                                    <span style={{ fontSize: 14, fontWeight: 700, color: form.status ? '#10b981' : 'var(--text-muted)' }}>
+                                        {form.status ? 'Active' : 'Inactive'}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Submit Button */}
                         <button
                             className="btn btn-primary"
-                            style={{ width: '100%', padding: '12px' }}
-                            onClick={deployToken}
-                            disabled={!isConnected || deploying}
+                            style={{ width: '100%', height: 52, fontSize: 16, fontWeight: 800, borderRadius: 12, marginTop: 4 }}
+                            onClick={handleSubmit}
+                            disabled={submitting}
                         >
-                            {deploying ? (
-                                <><Loader2 size={16} className="animate-spin" /> Deploying...</>
-                            ) : isConnected ? (
-                                <><Zap size={16} /> Deploy Token</>
-                            ) : (
-                                <><Wallet size={16} /> Connect Wallet First</>
-                            )}
+                            {submitting
+                                ? <><Loader2 size={18} className="animate-spin" /> Processing...</>
+                                : editTarget
+                                    ? <><Edit2 size={18} /> Update Token</>
+                                    : <><Zap size={18} /> Create Token</>
+                            }
                         </button>
-                        {!isConnected && (
-                            <p style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', marginTop: 8 }}>
-                                ⚠️ Connect your wallet above to deploy tokens
-                            </p>
-                        )}
                     </div>
                 </div>
 
-                {/* Wallet Connection */}
-                <div className="card">
-                    <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <Wallet size={18} color="var(--accent-blue)" /> Wallet Connection
-                    </h3>
+                {/* ── Sidebar ── */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
 
-                    {isConnected && walletAddress ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                            <div style={{
-                                padding: 16, background: 'rgba(52,211,153,0.1)', borderRadius: 12,
-                                border: '1px solid rgba(52,211,153,0.3)'
-                            }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                                    <CheckCircle size={16} color="#34d399" />
-                                    <span style={{ fontWeight: 700, color: '#34d399' }}>Connected</span>
+                    {/* Stats */}
+                    <div className="card" style={{ background: 'var(--bg-primary)' }}>
+                        <h4 style={{ fontSize: 14, fontWeight: 800, marginBottom: 18 }}>Token Overview</h4>
+                        {[
+                            { label: 'Total Tokens',          value: tokens.length,     color: '#7c5cf6' },
+                            { label: 'Active',                value: active,            color: '#10b981' },
+                            { label: 'Inactive',              value: tokens.length - active, color: '#ef4444' },
+                            { label: 'Admin ID Restricted',   value: restricted,        color: '#f59e0b' },
+                        ].map(s => (
+                            <div key={s.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
+                                <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{s.label}</span>
+                                <span style={{ fontSize: 18, fontWeight: 800, color: s.color }}>{s.value}</span>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* Token Types Info */}
+                    <div className="card" style={{ padding: 20 }}>
+                        <h4 style={{ fontSize: 13, fontWeight: 800, marginBottom: 14, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 1 }}>Token Types</h4>
+                        {(Object.keys(TYPE_CONFIG) as TokenType[]).map(k => {
+                            const cfg = TYPE_CONFIG[k]
+                            const Icon = cfg.icon
+                            return (
+                                <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+                                    <div style={{ width: 30, height: 30, borderRadius: 8, background: cfg.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                        <Icon size={15} color={cfg.color} />
+                                    </div>
+                                    <div>
+                                        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{cfg.label}</div>
+                                        <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{cfg.desc}</div>
+                                    </div>
                                 </div>
-                                <div style={{ fontSize: 13, marginBottom: 4 }}>
-                                    <span style={{ color: 'var(--text-muted)' }}>Address:</span>
+                            )
+                        })}
+                    </div>
+
+                    {/* Admin ID Info */}
+                    <div className="card" style={{ background: 'rgba(124,92,246,0.06)', border: '1px solid rgba(124,92,246,0.25)', padding: 18 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                            <Shield size={16} color="#7c5cf6" />
+                            <span style={{ fontSize: 13, fontWeight: 800, color: '#a78bfa' }}>Admin ID Logic</span>
+                        </div>
+                        <p style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.7, margin: 0 }}>
+                            The <strong style={{ color: '#a78bfa' }}>Admin ID</strong> you set here is the access key. 
+                            Only users whose profile has the same Admin ID will be able to claim this token. All others will be rejected.
+                        </p>
+                    </div>
+
+                    {/* Admin Wallet UI */}
+                    <div 
+                        className="card" 
+                        onClick={handleWalletClick}
+                        style={{ 
+                            background: 'linear-gradient(145deg, #1e1e2d, #161625)', 
+                            border: '1px solid #7c5cf640',
+                            padding: 24,
+                            position: 'relative',
+                            overflow: 'hidden',
+                            cursor: 'pointer',
+                            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                            transform: 'translateY(0)',
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-4px)'}
+                        onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
+                    >
+                        <div style={{ position: 'absolute', top: -20, right: -20, opacity: 0.1 }}>
+                            <Wallet size={120} color="#7c5cf6" />
+                        </div>
+                        
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+                            <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(124,92,246,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <Shield size={16} color="#a78bfa" />
+                            </div>
+                            <span style={{ fontSize: 13, fontWeight: 800, color: '#fefefe', letterSpacing: 0.5 }}>PRIMARY WALLET</span>
+                            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4, background: 'rgba(16,185,129,0.15)', padding: '3px 8px', borderRadius: 6 }}>
+                                <Lock size={10} color="#10b981" />
+                                <span style={{ fontSize: 9, fontWeight: 800, color: '#10b981' }}>LOCKED & SECURED</span>
+                            </div>
+                        </div>
+
+                        <div style={{ marginBottom: 20 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+                                <div>
+                                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', fontWeight: 700, marginBottom: 2 }}>PRIMARY WALLET BALANCE (INR)</div>
+                                    <div style={{ fontSize: 16, fontWeight: 800, color: '#34d399', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                        <span style={{ fontSize: 12 }}>₹</span>
+                                        {balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                    </div>
                                 </div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                    <code style={{ fontSize: 12, color: 'var(--text-primary)', flex: 1, wordBreak: 'break-all' }}>
-                                        {walletAddress}
-                                    </code>
-                                    <button
-                                        className="btn btn-sm btn-secondary"
-                                        onClick={() => copyToClipboard(walletAddress, 'wallet')}
-                                        title="Copy address"
-                                    >
-                                        <Copy size={14} />
-                                    </button>
-                                    {copied === 'wallet' && <span style={{ fontSize: 11, color: '#34d399' }}>Copied!</span>}
-                                </div>
-                                <div style={{ fontSize: 14, marginTop: 12, fontWeight: 700 }}>
-                                    <span style={{ color: 'var(--text-muted)' }}>Balance:</span> {walletBalance} ETH
+                                <div style={{ textAlign: 'right' }}>
+                                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', fontWeight: 700, marginBottom: 2 }}>PRIMARY WALLET (INF)</div>
+                                    <div style={{ fontSize: 24, fontWeight: 900, color: 'white' }}>
+                                        {tokenBalance.toLocaleString()} INF
+                                    </div>
                                 </div>
                             </div>
-                            <button
-                                className="btn btn-secondary"
-                                style={{ width: '100%' }}
-                                onClick={disconnectWallet}
-                            >
-                                Disconnect
-                            </button>
                         </div>
-                    ) : (
-                        <div style={{
-                            padding: 32, background: 'var(--bg-primary)', borderRadius: 12,
-                            textAlign: 'center', border: '2px dashed var(--border)'
-                        }}>
-                            <div style={{
-                                width: 64, height: 64, borderRadius: '50%',
-                                background: 'rgba(124,92,246,0.1)',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                margin: '0 auto 16px'
-                            }}>
-                                <Wallet size={32} color="var(--accent-purple)" />
-                            </div>
-                            <h4 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Connect Wallet</h4>
-                            <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
-                                Connect your wallet to deploy tokens
-                            </p>
-                            <button className="btn btn-primary" onClick={connectWallet}>
-                                <Wallet size={16} /> Connect Wallet
-                            </button>
-                        </div>
-                    )}
 
-                    <div style={{ marginTop: 16, padding: 12, background: 'rgba(52,211,153,0.1)', borderRadius: 8 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
-                            <CheckCircle size={14} color="#34d399" />
-                            <span>Demo Mode - No MetaMask required</span>
+                        <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', lineHeight: 1.5, marginBottom: 18 }}>
+                            Automated System Cost: <strong style={{color: '#ef4444'}}>1 INF</strong> per token.
                         </div>
+
+                        <button 
+                            className="btn btn-primary" 
+                            style={{ 
+                                width: '100%', height: 44, fontSize: 13, fontWeight: 800, 
+                                borderRadius: 10, background: '#7c5cf6',
+                                border: 'none', cursor: 'pointer', display: 'flex', 
+                                alignItems: 'center', justifyContent: 'center', gap: 8
+                            }}
+                            onClick={(e) => { e.stopPropagation(); rechargeWallet(); }}
+                        >
+                            <ArrowUpCircle size={16} /> Recharge Tokens (₹50 = 50 INF)
+                        </button>
+                        
+                        {tokenBalance < 5 && (
+                            <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 6, color: '#f59e0b', fontSize: 10, fontWeight: 700 }}>
+                                <AlertTriangle size={12} /> Low INF balance! Please recharge soon.
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
 
-                {/* Recent Deployments */}
-            <div className="card">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                    <h3 style={{ fontSize: 16, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <Coins size={18} color="var(--accent-purple)" /> Deployed Tokens ({tokens.length})
-                    </h3>
-                    <button className="btn btn-sm btn-secondary" onClick={loadTokens}>
+            {/* ── Token Management Table ── */}
+            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+                <div style={{ padding: '20px 28px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                        <h3 style={{ fontSize: 18, fontWeight: 800, margin: 0 }}>Token Management</h3>
+                        <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: 0 }}>All promo tokens generated in the system</p>
+                    </div>
+                    <button className="btn btn-secondary btn-sm" onClick={loadTokens}>
                         <RefreshCw size={14} /> Refresh
                     </button>
                 </div>
 
-                {tokens.length === 0 ? (
-                    <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-muted)' }}>
-                        <Coins size={48} strokeWidth={1} style={{ marginBottom: 12, opacity: 0.5 }} />
-                        <p style={{ fontSize: 14 }}>No tokens deployed yet</p>
-                        <p style={{ fontSize: 12, marginTop: 4 }}>Your deployed tokens will appear here</p>
-                    </div>
-                ) : (
-                    <div style={{ overflowX: 'auto' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                            <thead>
-                                <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                                    <th style={{ padding: '12px 8px', textAlign: 'left', fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>Token</th>
-                                    <th style={{ padding: '12px 8px', textAlign: 'left', fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>Network</th>
-                                    <th style={{ padding: '12px 8px', textAlign: 'left', fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>Status</th>
-                                    <th style={{ padding: '12px 8px', textAlign: 'left', fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>Expiry</th>
-                                    <th style={{ padding: '12px 8px', textAlign: 'left', fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>Actions</th>
+                <div style={{ overflowX: 'auto' }}>
+                    <table className="data-table">
+                        <thead>
+                            <tr>
+                                <th style={{ padding: '14px 28px' }}>Token Name</th>
+                                <th>Type</th>
+                                <th>Token Code</th>
+                                <th>Admin ID ⚡</th>
+                                <th>Usage</th>
+                                <th>Expiry</th>
+                                <th>Status</th>
+                                <th style={{ textAlign: 'right', paddingRight: 28 }}>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {tokens.length === 0 ? (
+                                <tr>
+                                    <td colSpan={8} style={{ textAlign: 'center', padding: '60px 0', color: 'var(--text-muted)' }}>
+                                        <Gift size={40} style={{ margin: '0 auto 12px', display: 'block', opacity: 0.2 }} />
+                                        No tokens yet. Create one above.
+                                    </td>
                                 </tr>
-                            </thead>
-                            <tbody>
-                                {tokens.map((token) => (
-                                    <tr key={token.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                                        <td style={{ padding: '12px 8px' }}>
-                                            <div style={{ fontWeight: 700 }}>{token.name}</div>
-                                            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{token.symbol}</div>
+                            ) : tokens.map(token => {
+                                const cfg = TYPE_CONFIG[token.token_type] || TYPE_CONFIG.offer
+                                const Icon = cfg.icon
+                                const expired = token.expiry_date && new Date(`${token.expiry_date.split('T')[0]}T${token.expiry_time || '23:59'}`) < new Date()
+                                const usagePercent = Math.min(100, (token.used_count / token.max_usages) * 100)
+                                return (
+                                    <tr key={token.id}>
+                                        <td style={{ padding: '14px 28px' }}>
+                                            <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: 14 }}>{token.name}</div>
+                                            {token.contact && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{token.contact}</div>}
                                         </td>
-                                        <td style={{ padding: '12px 8px', fontSize: 13 }}>
-                                            {NETWORKS[token.network]?.name || token.network}
-                                        </td>
-                                        <td style={{ padding: '12px 8px' }}>
+                                        <td>
                                             <span style={{
-                                                background: token.status === 'active' ? 'rgba(52,211,153,0.2)' : 'rgba(239,68,68,0.2)',
-                                                color: token.status === 'active' ? '#34d399' : '#ef4444',
-                                                padding: '2px 8px',
-                                                borderRadius: 4,
-                                                fontSize: 11,
-                                                fontWeight: 600
+                                                display: 'inline-flex', alignItems: 'center', gap: 5,
+                                                padding: '4px 10px', borderRadius: 20,
+                                                background: cfg.bg, color: cfg.color, fontSize: 12, fontWeight: 700
                                             }}>
-                                                {token.status === 'active' ? 'Active' : 'Inactive'}
+                                                <Icon size={12} /> {cfg.label}
                                             </span>
                                         </td>
-                                        <td style={{ padding: '12px 8px', fontSize: 12, color: 'var(--text-muted)' }}>
-                                            {token.expiry_date ? new Date(token.expiry_date).toLocaleDateString() : 'No expiry'}
-                                        </td>
-                                        <td style={{ padding: '12px 8px' }}>
-                                            <div style={{ display: 'flex', gap: 4 }}>
-                                                <button
-                                                    className="btn btn-sm"
-                                                    onClick={() => toggleTokenStatus(token.id)}
-                                                    title={token.status === 'active' ? 'Disable token' : 'Enable token'}
-                                                    style={{
-                                                        color: token.status === 'active' ? '#f59e0b' : '#34d399'
-                                                    }}
-                                                >
-                                                    {token.status === 'active' ? 'Disable' : 'Enable'}
+                                        <td>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                <code style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-primary)' }}>{token.token_code}</code>
+                                                <button className="icon-btn" style={{ width: 22, height: 22 }} onClick={() => copyCode(token.token_code)}>
+                                                    <Copy size={11} />
                                                 </button>
-                                                <button
-                                                    className="btn btn-sm"
-                                                    onClick={() => deleteToken(token.id)}
-                                                    title="Delete token"
-                                                    style={{ color: '#ef4444' }}
-                                                >
-                                                    Delete
+                                                {copied === token.token_code && <span style={{ fontSize: 9, color: '#10b981', fontWeight: 800 }}>COPIED</span>}
+                                            </div>
+                                        </td>
+                                        <td>
+                                            {token.admin_id ? (
+                                                <span style={{
+                                                    display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 10px',
+                                                    borderRadius: 20, background: 'rgba(124,92,246,0.12)',
+                                                    color: '#a78bfa', fontSize: 12, fontWeight: 800, border: '1px solid rgba(124,92,246,0.3)'
+                                                }}>
+                                                    <Shield size={11} /> {token.admin_id}
+                                                </span>
+                                            ) : (
+                                                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>— Public —</span>
+                                            )}
+                                        </td>
+                                        <td>
+                                            <div style={{ fontSize: 13, fontWeight: 700 }}>{token.used_count} / {token.max_usages}</div>
+                                            <div style={{ width: 80, height: 4, background: 'var(--border)', borderRadius: 2, marginTop: 5 }}>
+                                                <div style={{ width: `${usagePercent}%`, height: '100%', background: usagePercent >= 100 ? '#ef4444' : '#7c5cf6', borderRadius: 2, transition: 'width 0.4s' }} />
+                                            </div>
+                                        </td>
+                                        <td>
+                                            {token.expiry_date ? (
+                                                <div>
+                                                    <div style={{ fontSize: 12, fontWeight: 700, color: expired ? '#ef4444' : 'var(--text-primary)' }}>
+                                                        {new Date(token.expiry_date).toLocaleDateString('en-IN')}
+                                                    </div>
+                                                    <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                                                        {(token.expiry_time || '23:59').slice(0, 5)}
+                                                    </div>
+                                                </div>
+                                            ) : <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>—</span>}
+                                        </td>
+                                        <td>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                <div style={{ width: 8, height: 8, borderRadius: '50%', background: expired ? '#6b7280' : token.status ? '#10b981' : '#ef4444' }} />
+                                                <span style={{ fontSize: 12, fontWeight: 700, color: expired ? '#6b7280' : token.status ? '#10b981' : '#ef4444' }}>
+                                                    {expired ? 'Expired' : token.status ? 'Active' : 'Inactive'}
+                                                </span>
+                                            </div>
+                                        </td>
+                                        <td style={{ textAlign: 'right', paddingRight: 28 }}>
+                                            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                                                <button className="btn btn-secondary btn-sm" onClick={() => handleEdit(token)}>
+                                                    <Edit2 size={13} /> Edit
+                                                </button>
+                                                <button className="btn btn-danger btn-sm" onClick={() => handleDelete(token.id)}>
+                                                    <Trash2 size={13} />
                                                 </button>
                                             </div>
                                         </td>
                                     </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                )}
+                                )
+                            })}
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     )

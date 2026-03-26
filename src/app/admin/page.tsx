@@ -65,7 +65,7 @@ export default function AdminPage() {
   const [storageStats, setStorageStats] = useState({ totalMB: 0, totalPhotos: 0, totalPdfs: 0 })
   const [chartData, setChartData] = useState<{ day: string; sheets: number; photos: number }[]>([])
   const [toast, setToast] = useState('')
-  const [adminBalances, setAdminBalances] = useState({ inr: 1149638, totalInr: 1149638 })
+  const [adminBalances, setAdminBalances] = useState({ inr: 0, tokens: 0 })
 
   const showToast = (msg: string) => {
     setToast(msg)
@@ -80,19 +80,21 @@ export default function AdminPage() {
       return
     }
     // DB سے role check کریں (email check backup کے طور پر)
+    // DB سے role check کریں
     const verifyAdmin = async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('profiles')
         .select('role')
         .eq('id', user.id)
         .single()
-      const roleIsAdmin = data?.role === 'admin'
-      const emailIsAdmin = user.email === ADMIN_EMAIL || user.user_metadata?.role === 'admin'
-      if (roleIsAdmin || emailIsAdmin) {
-        setIsAdminVerified(true)
-      } else {
+      
+      if (error || data?.role !== 'admin') {
+        console.error("Admin verification failed:", error?.message || "User is not an admin")
         router.replace('/dashboard')
+        return
       }
+
+      setIsAdminVerified(true)
     }
     verifyAdmin()
   }, [user, authLoading, router])
@@ -132,12 +134,12 @@ export default function AdminPage() {
       })))
       
       // Fetch admin balance
-      const { data: profile } = await supabase.from('profiles').select('inr_balance').eq('id', user?.id).single()
+      const { data: profile } = await supabase.from('profiles').select('wallet_balance, token_balance').eq('id', user?.id).single()
       if (profile) {
-        // Base starting balance (4.6924 ETH converted) + real DB balance
-        const baseBalance = 1149638
-        const inr = (profile.inr_balance || 0) + baseBalance
-        setAdminBalances({ inr, totalInr: inr })
+        setAdminBalances({ 
+          inr: Number(profile.wallet_balance) || 0, 
+          tokens: Number(profile.token_balance) || 0 
+        })
       }
     }
     if (tab === 'logs') {
@@ -203,7 +205,15 @@ export default function AdminPage() {
 
     const channel = supabase
       .channel('admin-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, debouncedRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, (payload: any) => {
+        if (payload.new && payload.new.id === user?.id) {
+          setAdminBalances({
+            inr: Number(payload.new.wallet_balance) || 0,
+            tokens: Number(payload.new.token_balance) || 0
+          })
+        }
+        debouncedRefresh()
+      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'photos' }, debouncedRefresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sheets' }, debouncedRefresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'activity_logs' }, debouncedRefresh)
@@ -416,12 +426,17 @@ export default function AdminPage() {
             {/* DASHBOARD TAB */}
             {tab === 'dashboard' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-                {/* Stat Cards */}
-                <div className="grid-4">
+                <div style={{ 
+                  display: 'grid', 
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', 
+                  gap: 20, 
+                  marginBottom: 24 
+                }}>
                   {[
                     { label: 'Registered Users', value: animUsers, icon: Users, color: '#7c5cf6', change: 'Total accounts' },
                     { label: 'Photos Edited', value: animPhotos, icon: Image, color: '#4f8ef7', change: 'AI processing' },
-                    { label: 'Wallet Balance (INR)', value: `₹${adminBalances.totalInr.toLocaleString()}`, icon: Wallet, color: '#f59e0b', change: 'Main wallet' },
+                    { label: 'Primary Wallet Balance (INR)', value: `₹${adminBalances.inr.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, icon: Wallet, color: '#10b981', change: 'Main cash wallet' },
+                    { label: 'Primary Wallet (INF)', value: `${adminBalances.tokens} INF`, icon: Coins, color: '#f59e0b', change: 'Tokens for codes' },
                     { label: 'System Health', value: '✓ OK', icon: CheckCircle, color: '#34d399', change: '99.5% uptime' },
                   ].map(s => {
                     const Icon = s.icon
@@ -438,7 +453,7 @@ export default function AdminPage() {
                             LIVE
                           </span>
                         </div>
-                        <div className="stat-value" style={{ fontSize: 28, transition: 'all 0.15s' }}>{s.value}</div>
+                        <div className="stat-value" style={{ fontSize: 24, transition: 'all 0.15s' }}>{s.value}</div>
                         <div className="stat-change">{s.change}</div>
                       </div>
                     )

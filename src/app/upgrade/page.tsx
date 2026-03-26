@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import DashboardLayout from '@/components/DashboardLayout'
 import { useAuth } from '@/contexts/AuthContext'
-import { Check, Zap, Shield, Star, Crown, Rocket, Sparkles, CreditCard, Loader2, PartyPopper } from 'lucide-react'
+import { supabase } from '@/lib/supabase'
+import { Check, Zap, Shield, Star, Crown, Rocket, Sparkles, CreditCard, Loader2, PartyPopper, Lock, Wallet } from 'lucide-react'
 
 interface RazorpayResponse {
   razorpay_payment_id: string
@@ -78,6 +79,41 @@ export default function UpgradePage() {
   const [loading, setLoading] = useState<string | null>(null)
   const [paymentSuccess, setPaymentSuccess] = useState(false)
   const [error, setError] = useState('')
+  const [balance, setBalance] = useState<number>(0)
+
+  // Load wallet balance
+  useEffect(() => {
+    const fetchBalance = async () => {
+      if (!user) return
+      const { data } = await supabase.from('profiles').select('wallet_balance').eq('id', user.id).single()
+      if (data) setBalance(Number(data.wallet_balance) || 0)
+    }
+    fetchBalance()
+
+    // REAL-TIME SYNC: Update balance automatically
+    let channel: any
+    if (user) {
+      channel = supabase
+        .channel(`upgrade-wallet-${user.id}`)
+        .on('postgres_changes', { 
+            event: 'UPDATE', 
+            schema: 'public', 
+            table: 'profiles',
+            filter: `id=eq.${user.id}`
+        }, (payload) => {
+            const newBal = payload.new.wallet_balance
+            if (newBal !== undefined) {
+              setBalance(Number(newBal))
+              console.log("Upgrade page balance updated live:", newBal)
+            }
+        })
+        .subscribe()
+    }
+
+    return () => {
+      if (channel) supabase.removeChannel(channel)
+    }
+  }, [user])
 
   // Load Razorpay script
   useEffect(() => {
@@ -179,39 +215,69 @@ export default function UpgradePage() {
 
   return (
     <DashboardLayout>
-      <div className="page-header" style={{ textAlign: 'center', marginBottom: 40 }}>
-        <div style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 8,
-          padding: '6px 12px',
-          background: 'rgba(124, 92, 246, 0.1)',
-          borderRadius: '20px',
-          color: 'var(--accent-purple-light)',
-          fontSize: '12px',
-          fontWeight: 700,
-          marginBottom: 16,
-          textTransform: 'uppercase',
-          letterSpacing: '1px'
+      <div style={{ position: 'relative' }}>
+        {/* Wallet Status Header */}
+        <div style={{ 
+          position: 'absolute', top: -10, right: 0, 
+          display: 'flex', alignItems: 'center', gap: 15,
+          background: 'rgba(26, 26, 46, 0.8)',
+          backdropFilter: 'blur(10px)',
+          padding: '10px 20px',
+          borderRadius: '14px',
+          border: '1px solid rgba(124, 92, 246, 0.25)',
+          boxShadow: '0 10px 30px rgba(0,0,0,0.2)',
+          zIndex: 10
         }}>
-          <Zap size={14} />
-          Pricing Plans
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+            <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.5)', fontWeight: 800 }}>PRIMARY WALLET BALANCE (INR)</span>
+            <div style={{ fontSize: '20px', fontWeight: 900, color: 'white', display: 'flex', alignItems: 'baseline', gap: 4 }}>
+              <span style={{ fontSize: '14px', color: '#10b981' }}>₹</span>
+              {balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
+              <Lock size={10} color="#10b981" />
+              <span style={{ fontSize: '9px', fontWeight: 800, color: '#10b981' }}>LOCKED & SECURED</span>
+            </div>
+          </div>
+          <div style={{ width: 40, height: 40, borderRadius: 10, background: 'rgba(124, 92, 246, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Wallet size={20} color="#a78bfa" />
+          </div>
         </div>
-        <h1 className="page-title" style={{ fontSize: '42px', marginBottom: 12 }}>Unlock Ultimate Precision</h1>
-        <p className="page-subtitle" style={{ maxWidth: '600px', margin: '0 auto', fontSize: '16px' }}>
-          Choose the plan that fits your studio needs. From hobbyists to high-volume businesses, we've got you covered with AI-powered perfection.
-        </p>
 
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, marginTop: 32 }}>
-          <span style={{ fontSize: '14px', fontWeight: 600, color: billingCycle === 'monthly' ? 'var(--text-primary)' : 'var(--text-muted)' }}>Monthly</span>
-          <button
-            className={`toggle ${billingCycle === 'yearly' ? 'on' : ''}`}
-            onClick={() => setBillingCycle(b => b === 'monthly' ? 'yearly' : 'monthly')}
-            style={{ width: '50px', height: '26px' }}
-          />
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: '14px', fontWeight: 600, color: billingCycle === 'yearly' ? 'var(--text-primary)' : 'var(--text-muted)' }}>Yearly</span>
-            <span style={{ background: 'rgba(52, 211, 153, 0.15)', color: '#34d399', fontSize: '10px', fontWeight: 800, padding: '2px 8px', borderRadius: '10px' }}>SAVE 20%</span>
+        <div className="page-header" style={{ textAlign: 'center', marginBottom: 40 }}>
+          <div style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '6px 12px',
+            background: 'rgba(124, 92, 246, 0.1)',
+            borderRadius: '20px',
+            color: 'var(--accent-purple-light)',
+            fontSize: '12px',
+            fontWeight: 700,
+            marginBottom: 16,
+            textTransform: 'uppercase',
+            letterSpacing: '1px'
+          }}>
+            <Zap size={14} />
+            Pricing Plans
+          </div>
+          <h1 className="page-title" style={{ fontSize: '42px', marginBottom: 12 }}>Unlock Ultimate Precision</h1>
+          <p className="page-subtitle" style={{ maxWidth: '600px', margin: '0 auto', fontSize: '16px' }}>
+            Choose the plan that fits your studio needs. From hobbyists to high-volume businesses, we've got you covered with AI-powered perfection.
+          </p>
+
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, marginTop: 32 }}>
+            <span style={{ fontSize: '14px', fontWeight: 600, color: billingCycle === 'monthly' ? 'var(--text-primary)' : 'var(--text-muted)' }}>Monthly</span>
+            <button
+              className={`toggle ${billingCycle === 'yearly' ? 'on' : ''}`}
+              onClick={() => setBillingCycle(b => b === 'monthly' ? 'yearly' : 'monthly')}
+              style={{ width: '50px', height: '26px' }}
+            />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: '14px', fontWeight: 600, color: billingCycle === 'yearly' ? 'var(--text-primary)' : 'var(--text-muted)' }}>Yearly</span>
+              <span style={{ background: 'rgba(52, 211, 153, 0.15)', color: '#34d399', fontSize: '10px', fontWeight: 800, padding: '2px 8px', borderRadius: '10px' }}>SAVE 20%</span>
+            </div>
           </div>
         </div>
       </div>

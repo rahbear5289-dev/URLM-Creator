@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Wallet, CreditCard, ArrowUpRight, History, CheckCircle, Clock, IndianRupee, Loader2, QrCode } from 'lucide-react'
+import { Wallet, CreditCard, ArrowUpRight, History, CheckCircle, Clock, IndianRupee, Loader2, QrCode, Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 
@@ -17,7 +17,7 @@ interface PaymentRecord {
 
 export default function PaymentsTab() {
     const { user } = useAuth()
-    const [inrBalance, setInrBalance] = useState<number>(1149638)
+    const [inrBalance, setInrBalance] = useState<number>(0)
     const [walletAddress, setWalletAddress] = useState<string>('Main Admin Wallet')
     const [topUpAmount, setTopUpAmount] = useState<string>('500')
     const [loading, setLoading] = useState(false)
@@ -29,6 +29,14 @@ export default function PaymentsTab() {
         setTimeout(() => setToast(''), 3000)
     }
 
+    const deleteHistoryRecord = (id: string) => {
+        if (!confirm('Are you sure you want to remove this record from your history?')) return
+        const updatedHistory = history.filter(h => h.id !== id)
+        setHistory(updatedHistory)
+        localStorage.setItem('admin_payment_history', JSON.stringify(updatedHistory))
+        showToast('Payment record removed.')
+    }
+
     // Load user balance and payment history
     useEffect(() => {
         if (!user) return
@@ -37,13 +45,12 @@ export default function PaymentsTab() {
             // In a real app, we'd fetch inr_balance from profiles
             const { data: profile } = await supabase
                 .from('profiles')
-                .select('inr_balance')
+                .select('wallet_balance')
                 .eq('id', user.id)
                 .single()
             
-            if (profile?.inr_balance) {
-                // Base starting balance (4.6924 ETH converted) + real DB balance
-                setInrBalance(1149638 + profile.inr_balance)
+            if (profile?.wallet_balance !== undefined) {
+                setInrBalance(Number(profile.wallet_balance))
             }
 
             // Fetch simulated or real transaction history
@@ -55,6 +62,26 @@ export default function PaymentsTab() {
         }
 
         loadPaymentData()
+
+        // REAL-TIME SYNC: Listen for wallet balance changes
+        const channel = supabase
+            .channel(`wallet-payments-sync-${user.id}`)
+            .on('postgres_changes', { 
+                event: 'UPDATE', 
+                schema: 'public', 
+                table: 'profiles',
+                filter: `id=eq.${user.id}`
+            }, (payload) => {
+                const newBal = payload.new.wallet_balance
+                if (newBal !== undefined) {
+                    setInrBalance(Number(newBal))
+                }
+            })
+            .subscribe()
+
+        return () => {
+            supabase.removeChannel(channel)
+        }
     }, [user])
 
     // Load Razorpay script
@@ -135,8 +162,20 @@ export default function PaymentsTab() {
                     const verifyData = await verifyResponse.json()
 
                     if (verifyData.success) {
+                        // UPDATE DATABASE PERMANENTLY
                         const newBalance = inrBalance + Number(topUpAmount)
-                        setInrBalance(newBalance)
+                        
+                        const { error: updateErr } = await supabase
+                            .from('profiles')
+                            .update({ wallet_balance: newBalance })
+                            .eq('id', user.id)
+                        
+                        if (!updateErr) {
+                            setInrBalance(newBalance)
+                            showToast(`Successfully added ₹${topUpAmount} to your wallet!`)
+                        } else {
+                            showToast('Balance updated on server, but failed to sync locally.')
+                        }
                         
                         // Add to history
                         const newRecord: PaymentRecord = {
@@ -195,7 +234,7 @@ export default function PaymentsTab() {
                         <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(124,92,246,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                             <IndianRupee size={16} color="#7c5cf6" />
                         </div>
-                        Primary Wallet Balance
+                        Primary Wallet Balance (INR)
                     </div>
                     <div className="stat-value" style={{ fontSize: 32 }}>₹{inrBalance.toLocaleString()}</div>
                     <div className="stat-change" style={{ color: '#34d399' }}>Locked & Secured</div>
@@ -318,9 +357,26 @@ export default function PaymentsTab() {
                                         <div style={{ fontSize: 14, fontWeight: 600 }}>Top Up Wallet</div>
                                         <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{new Date(record.created_at).toLocaleString()}</div>
                                     </div>
-                                    <div style={{ textAlign: 'right' }}>
-                                        <div style={{ fontSize: 14, fontWeight: 700, color: '#34d399' }}>+ ₹{record.amount}</div>
-                                        <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{record.razorpay_payment_id.slice(0, 10)}...</div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 15 }}>
+                                        <div style={{ textAlign: 'right' }}>
+                                            <div style={{ fontSize: 14, fontWeight: 700, color: '#34d399' }}>+ ₹{record.amount}</div>
+                                            <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{record.razorpay_payment_id?.slice(0, 10)}...</div>
+                                        </div>
+                                        <button 
+                                            onClick={() => deleteHistoryRecord(record.id)}
+                                            style={{ 
+                                                width: 30, height: 30, borderRadius: 8, 
+                                                background: 'rgba(239, 68, 68, 0.1)', 
+                                                border: 'none', color: '#ef4444', 
+                                                cursor: 'pointer', display: 'flex', 
+                                                alignItems: 'center', justifyContent: 'center',
+                                                transition: 'all 0.2s'
+                                            }}
+                                            onMouseEnter={e => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)'}
+                                            onMouseLeave={e => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'}
+                                        >
+                                            <Trash2 size={14} />
+                                        </button>
                                     </div>
                                 </div>
                             ))

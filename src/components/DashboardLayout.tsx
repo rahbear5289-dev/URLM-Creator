@@ -1,20 +1,29 @@
 'use client'
 
 import { useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import Sidebar from '@/components/Sidebar'
 import Header from '@/components/Header'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth()
+  const { user, loading, isStorageFull } = useAuth()
   const router = useRouter()
+  const pathname = usePathname()
+
+  const restrictedPaths = ['/photos', '/create-sheet', '/pvc-card', '/pdf-converter', '/crop', '/ai-edit']
 
   useEffect(() => {
     if (!loading && !user) {
       router.replace('/login')
+      return
     }
-  }, [user, loading, router])
+
+    // Redirect if storage is full and user tries to access restricted tools
+    if (!loading && isStorageFull && restrictedPaths.some(path => pathname.startsWith(path))) {
+      router.replace('/upgrade')
+    }
+  }, [user, loading, isStorageFull, pathname, router])
 
   if (loading) {
     return (

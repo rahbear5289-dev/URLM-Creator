@@ -5,17 +5,17 @@ import { useAuth } from '@/contexts/AuthContext'
 import {
   LayoutDashboard, Image, Grid2x2, CreditCard, FileText,
   User, Bell, Settings, LogOut, HelpCircle, Zap,
-  Shield, Coins, Scissors, Sparkles
+  Shield, Coins, Scissors, Sparkles, Lock
 } from 'lucide-react'
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/photos', label: 'My Photos', icon: Image },
-  { href: '/create-sheet', label: 'Create Sheet', icon: Grid2x2 },
-  { href: '/pvc-card', label: 'PVC Card', icon: CreditCard },
-  { href: '/pdf-converter', label: 'PDF Converter', icon: FileText },
-  { href: '/crop', label: 'PDF Crop', icon: Scissors },
-  { href: '/ai-edit', label: 'AI PDF Edit', icon: Sparkles },
+  { href: '/photos', label: 'My Photos', icon: Image, lockable: true },
+  { href: '/create-sheet', label: 'Create Sheet', icon: Grid2x2, lockable: true },
+  { href: '/pvc-card', label: 'PVC Card', icon: CreditCard, lockable: true },
+  { href: '/pdf-converter', label: 'PDF Converter', icon: FileText, lockable: true },
+  { href: '/crop', label: 'PDF Crop', icon: Scissors, lockable: true },
+  { href: '/ai-edit', label: 'AI PDF Edit', icon: Sparkles, lockable: true },
   { href: '/token/create', label: 'Token Enter', icon: Coins },
   { href: '/profile', label: 'Profile', icon: User },
 ]
@@ -28,14 +28,18 @@ const bottomItems = [
 export default function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
-  const { user, signOut, plan } = useAuth()
+  const { user, signOut, plan, isStorageFull } = useAuth()
 
   const isAdmin = user?.email === 'admin@urlm.app' || user?.user_metadata?.role === 'admin'
   const isPro = plan === 'pro' || plan === 'business'
 
   const initials = user?.email?.slice(0, 2).toUpperCase() ?? 'U'
 
-  const handleNav = (href: string) => {
+  const handleNav = (href: string, locked?: boolean) => {
+    if (locked) {
+      router.push('/upgrade')
+      return
+    }
     router.push(href)
   }
 
@@ -76,16 +80,20 @@ export default function Sidebar() {
         {navItems.map((item) => {
           const Icon = item.icon
           const isActive = pathname === item.href
+          const isLocked = isStorageFull && item.lockable
 
           return (
             <button
               key={item.href}
-              className={`nav-item ${isActive ? 'active' : ''}`}
-              onClick={() => handleNav(item.href)}
+              className={`nav-item ${isActive ? 'active' : ''} ${isLocked ? 'locked' : ''}`}
+              onClick={() => handleNav(item.href, isLocked)}
               id={`nav-${item.label.toLowerCase().replace(/\s+/g, '-')}`}
+              style={isLocked ? { opacity: 0.6, cursor: 'not-allowed' } : {}}
+              title={isLocked ? 'Storage limit reached. Please upgrade.' : ''}
             >
-              <Icon size={16} />
-              {item.label}
+              {isLocked ? <Lock size={16} color="var(--accent-pink)" /> : <Icon size={16} />}
+              <span style={{ flex: 1 }}>{item.label}</span>
+              {isLocked && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent-pink)', background: 'rgba(236,72,153,0.1)', padding: '2px 6px', borderRadius: 4 }}>LOCKED</span>}
             </button>
           )
         })}
