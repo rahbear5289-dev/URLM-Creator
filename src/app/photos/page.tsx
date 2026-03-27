@@ -121,7 +121,6 @@ export default function PhotosPage() {
       
       const blob = await removeBackground(file, {
         device: 'cpu',
-        publicPath: 'https://unpkg.com/@imgly/background-removal@1.7.0/dist/',
         output: { format: 'image/png', quality: 1 },
       })
 
