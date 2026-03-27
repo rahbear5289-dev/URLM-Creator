@@ -27,9 +27,16 @@ export async function POST(request: NextRequest) {
     })
 
     if (!response.ok) {
-      const errorText = await response.text()
-      console.error('Remove.bg error:', errorText)
-      return NextResponse.json({ error: 'Background removal failed' }, { status: response.status })
+      let errorMsg = `remove.bg error (${response.status})`
+      try {
+        const errJson = await response.json()
+        if (errJson?.errors?.[0]?.title) errorMsg = errJson.errors[0].title
+      } catch {
+        // non-JSON body — use text
+        try { errorMsg = await response.text() } catch { /* ignore */ }
+      }
+      console.error('Remove.bg error:', errorMsg)
+      return NextResponse.json({ error: errorMsg }, { status: response.status })
     }
 
     const imageBuffer = await response.arrayBuffer()

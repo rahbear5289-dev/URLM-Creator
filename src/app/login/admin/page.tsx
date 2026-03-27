@@ -66,7 +66,7 @@ export default function AdminLoginPage() {
                 id="login-email"
                 className="form-input"
                 type="email"
-                placeholder="admin@urlm.app"
+                placeholder="Enter admin email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required

@@ -2,10 +2,14 @@
 
 import { useState, useRef } from 'react'
 import DashboardLayout from '@/components/DashboardLayout'
+import FeatureLock from '@/components/FeatureLock'
 import { Upload, Printer, Download, RotateCw } from 'lucide-react'
 import { jsPDF } from 'jspdf'
+import { useAuth } from '@/contexts/AuthContext'
+import { supabase } from '@/lib/supabase'
 
 export default function PVCCardPage() {
+  const { user } = useAuth()
   const [uploadedImage, setUploadedImage] = useState<string | null>(null)
   const [width, setWidth] = useState(50)
   const [height, setHeight] = useState(30)
@@ -65,13 +69,32 @@ export default function PVCCardPage() {
       }
     }
 
+    // Log activity
+    if (user) {
+      await supabase.from('activity_logs').insert({
+        user_id: user.id,
+        action: 'pvc_generated',
+        description: 'Generated PVC layout PDF',
+        file_name: `PVC_Cards_${Date.now()}.pdf`
+      })
+
+      // Update storage usage (add 3MB simulation)
+      const { data: profile } = await supabase.from('profiles').select('storage_used').eq('id', user.id).single()
+      if (profile) {
+        await supabase.from('profiles').update({
+          storage_used: (profile.storage_used || 0) + (3 * 1024 * 1024)
+        }).eq('id', user.id)
+      }
+    }
+
     pdf.save(`PVC_Cards_${Date.now()}.pdf`)
     setGenerating(false)
   }
 
   return (
     <DashboardLayout>
-      <div className="page-header">
+      <FeatureLock featureName="PVC Card">
+        <div className="page-header">
         <h1 className="page-title">PVC Card Designer</h1>
         <p className="page-subtitle">Precision formatting for identification cards, badges, and professional PVC printing. Adjust dimensions with real-time bleed previews.</p>
       </div>
@@ -252,6 +275,7 @@ export default function PVCCardPage() {
           </div>
         </div>
       </div>
+      </FeatureLock>
     </DashboardLayout>
   )
 }

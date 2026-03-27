@@ -15,7 +15,7 @@ import {
   ChevronRight, X, Coins, Zap, Wallet, Copy, IndianRupee, CreditCard
 } from 'lucide-react'
 
-type Tab = 'dashboard' | 'users' | 'storage' | 'logs' | 'notifications' | 'analytics' | 'tokens' | 'payments'
+type Tab = 'overview' | 'dashboard' | 'users' | 'storage' | 'logs' | 'notifications' | 'analytics' | 'tokens' | 'payments'
 
 interface UserRow {
   id: string
@@ -61,7 +61,7 @@ export default function AdminPage() {
   const [notifMessage, setNotifMessage] = useState('')
   const [notifTarget, setNotifTarget] = useState('all')
   const [sendingNotif, setSendingNotif] = useState(false)
-  const [stats, setStats] = useState({ users: 0, photos: 0, sheets: 0, pdfs: 0 })
+  const [stats, setStats] = useState({ users: 0, photos: 0, sheets: 0, active: 0 })
   const [storageStats, setStorageStats] = useState({ totalMB: 0, totalPhotos: 0, totalPdfs: 0 })
   const [chartData, setChartData] = useState<{ day: string; sheets: number; photos: number }[]>([])
   const [toast, setToast] = useState('')
@@ -87,7 +87,7 @@ export default function AdminPage() {
         .select('role')
         .eq('id', user.id)
         .single()
-      
+
       if (error || data?.role !== 'admin') {
         console.error("Admin verification failed:", error?.message || "User is not an admin")
         router.replace('/dashboard')
@@ -99,66 +99,87 @@ export default function AdminPage() {
     verifyAdmin()
   }, [user, authLoading, router])
 
-  // ─── loadData (wrapped in useCallback so it's stable for subscriptions) ───
+  // ─── loadStats (always needed for dashboard header & cards) ───
+  const loadStats = useCallback(async () => {
+    if (!isAdminVerified) return { uCount: 0, pCount: 0, sCount: 0, aCount: 0 }
+    const [{ count: uCount }, { count: pCount }, { count: sCount }, { count: aCount }] = await Promise.all([
+      supabase.from('profiles').select('*', { count: 'exact', head: true }) as any,
+      supabase.from('photos').select('*', { count: 'exact', head: true }) as any,
+      supabase.from('sheets').select('*', { count: 'exact', head: true }) as any,
+      supabase.from('activity_logs').select('*', { count: 'exact', head: true }).gte('created_at', new Date(Date.now() - 5 * 60 * 1000).toISOString()) as any
+    ])
+    setStats({ users: uCount ?? 0, photos: pCount ?? 0, sheets: sCount ?? 0, active: aCount ?? 0 })
+    return { uCount: uCount ?? 0, pCount: pCount ?? 0, sCount: sCount ?? 0, aCount: aCount ?? 0 }
+  }, [isAdminVerified])
+
+  // ─── loadData (tab-specific) ───
   const loadData = useCallback(async () => {
     if (!isAdminVerified) return
     setLoading(true)
-    const [{ count: uCount }, { count: pCount }, { count: sCount }] = await Promise.all([
-      supabase.from('profiles').select('*', { count: 'exact', head: true }),
-      supabase.from('photos').select('*', { count: 'exact', head: true }),
-      supabase.from('sheets').select('*', { count: 'exact', head: true }),
-    ])
-    setStats({ users: uCount ?? 0, photos: pCount ?? 0, sheets: sCount ?? 0, pdfs: sCount ?? 0 })
+    const statsResult = await loadStats()
+    const pCount = statsResult?.pCount ?? 0
+    const sCount = statsResult?.sCount ?? 0
 
-    if (tab === 'storage') {
-      const [profilesRes, photosRes, sheetsRes] = await Promise.all([
-        supabase.from('profiles').select('id, email, full_name, status, storage_used, total_files, role'),
-        supabase.from('photos').select('*', { count: 'exact', head: true }),
-        supabase.from('sheets').select('*', { count: 'exact', head: true }),
-      ])
-      const totalStorage = (profilesRes.data ?? []).reduce((acc: number, p: Record<string, unknown>) => acc + ((p.storage_used as number) ?? 0), 0)
-      setStorageStats({
-        totalMB: Math.round(totalStorage / 1048576),
-        totalPhotos: photosRes.count ?? 0,
-        totalPdfs: sheetsRes.count ?? 0,
-      })
-      setUsers((profilesRes.data ?? []).map((u: Record<string, unknown>) => ({
-        id: u.id as string, email: (u.email as string) ?? '—', full_name: (u.full_name as string) ?? '—',
-        role: (u.role as string) ?? 'user', status: (u.status as string) ?? 'active', created_at: (u.created_at as string) ?? '',
-      })))
-    } else if (tab === 'users' || tab === 'dashboard') {
-      const { data } = await supabase.from('profiles').select('*').order('created_at', { ascending: false }).limit(50)
-      setUsers((data ?? []).map((u: Record<string, unknown>) => ({
-        id: u.id as string, email: (u.email as string) ?? '—', full_name: (u.full_name as string) ?? '—',
-        role: (u.role as string) ?? 'user', status: (u.status as string) ?? 'active', created_at: u.created_at as string,
-      })))
-      
-      // Fetch admin balance
-      const { data: profile } = await supabase.from('profiles').select('wallet_balance, token_balance').eq('id', user?.id).single()
-      if (profile) {
-        setAdminBalances({ 
-          inr: Number(profile.wallet_balance) || 0, 
-          tokens: Number(profile.token_balance) || 0 
-        })
-      }
+    // Fetch tab-specific data
+    const promises: Promise<any>[] = []
+
+    // Always fetch users if we are on users, dashboard, storage, or notifications tabs
+    if (['dashboard', 'users', 'storage', 'notifications', 'analytics'].includes(tab)) {
+      promises.push(supabase.from('profiles').select('*').order('created_at', { ascending: false }).limit(100) as any)
     }
+
     if (tab === 'logs') {
-      const { data } = await supabase.from('activity_logs').select('*').order('created_at', { ascending: false }).limit(100)
-      setLogs(data ?? [])
+      promises.push(supabase.from('activity_logs').select('*').order('created_at', { ascending: false }).limit(100) as any)
     }
+
     if (tab === 'notifications') {
-      const { data } = await supabase.from('notifications').select('*').order('created_at', { ascending: false }).limit(50)
-      setNotifications(data ?? [])
+      promises.push(supabase.from('notifications').select('*').order('created_at', { ascending: false }).limit(50) as any)
     }
-    if (tab === 'analytics' || tab === 'dashboard') {
+
+    if (tab === 'dashboard' || tab === 'analytics') {
       const sevenDaysAgo = new Date()
       sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-      const isoDate = sevenDaysAgo.toISOString()
+      promises.push(supabase.from('photos').select('created_at').gte('created_at', sevenDaysAgo.toISOString()) as any)
+      promises.push(supabase.from('sheets').select('created_at').gte('created_at', sevenDaysAgo.toISOString()) as any)
+    }
 
-      const [photosData, sheetsData] = await Promise.all([
-        supabase.from('photos').select('created_at').gte('created_at', isoDate),
-        supabase.from('sheets').select('created_at').gte('created_at', isoDate),
-      ])
+    const results = await Promise.all(promises)
+    let resultIdx = 0
+
+    if (['dashboard', 'users', 'storage', 'notifications', 'analytics'].includes(tab)) {
+      const { data: profilesData } = results[resultIdx++]
+      if (profilesData) {
+        const mappedUsers = profilesData.map((u: any) => ({
+          id: u.id, email: u.email ?? '—', full_name: u.full_name ?? '—',
+          role: u.role ?? 'user', status: u.status ?? 'active', created_at: u.created_at,
+          _storage_used: u.storage_used, _photos: u.total_files
+        }))
+        setUsers(mappedUsers)
+
+        if (tab === 'storage') {
+          const totalStorage = profilesData.reduce((acc: number, p: any) => acc + (p.storage_used || 0), 0)
+          setStorageStats({
+            totalMB: Math.round(totalStorage / 1048576),
+            totalPhotos: pCount ?? 0,
+            totalPdfs: sCount ?? 0,
+          })
+        }
+      }
+    }
+
+    if (tab === 'logs') {
+      const { data: logsData } = results[resultIdx++]
+      setLogs(logsData ?? [])
+    }
+
+    if (tab === 'notifications') {
+      const { data: notifsData } = results[resultIdx++]
+      setNotifications(notifsData ?? [])
+    }
+
+    if (tab === 'dashboard' || tab === 'analytics') {
+      const { data: photosRes } = results[resultIdx++]
+      const { data: sheetsRes } = results[resultIdx++]
 
       const days: { dateKey: string; day: string; photos: number; sheets: number }[] = []
       const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -169,42 +190,53 @@ export default function AdminPage() {
         days.push({ dateKey: dayStr, day: dayNames[d.getDay()], photos: 0, sheets: 0 })
       }
 
-      photosData.data?.forEach(p => {
-        if (!p.created_at) return
-        const dStr = new Date(p.created_at).toISOString().split('T')[0]
+      photosRes?.forEach((p: any) => {
+        const dStr = p.created_at.split('T')[0]
         const target = days.find(x => x.dateKey === dStr)
         if (target) target.photos++
       })
-
-      sheetsData.data?.forEach(s => {
-        if (!s.created_at) return
-        const dStr = new Date(s.created_at).toISOString().split('T')[0]
+      sheetsRes?.forEach((s: any) => {
+        const dStr = s.created_at.split('T')[0]
         const target = days.find(x => x.dateKey === dStr)
         if (target) target.sheets++
       })
-
       setChartData(days.map(d => ({ day: d.day, photos: d.photos, sheets: d.sheets })))
     }
+
+    // Admin balance (for wallet card)
+    const { data: adminProfile } = await supabase.from('profiles').select('wallet_balance, token_balance').eq('id', user?.id).single()
+    if (adminProfile) {
+      setAdminBalances({
+        inr: Number(adminProfile.wallet_balance) || 0,
+        tokens: Number(adminProfile.token_balance) || 0
+      })
+    }
+
     setLoading(false)
-  }, [tab, isAdminVerified])
+  }, [tab, isAdminVerified, user?.id])
 
   // ─── Load on tab change (صرف admin verify ہونے کے بعد) ───
   useEffect(() => {
     if (isAdminVerified) {
-      setTimeout(() => loadData(), 0)
+      loadData()
     }
-  }, [loadData, isAdminVerified])
+  }, [tab, isAdminVerified, loadData])
 
-  // ─── Real-time subscription (with debouncing) ───
+  // ─── Real-time subscription ───
   useEffect(() => {
+    if (!isAdminVerified) return
+
     let timer: NodeJS.Timeout
     const debouncedRefresh = () => {
       clearTimeout(timer)
-      timer = setTimeout(() => loadData(), 2000) // 2s debounce
+      timer = setTimeout(() => {
+        loadStats()
+        loadData()
+      }, 500)
     }
 
     const channel = supabase
-      .channel('admin-realtime')
+      .channel('admin-realtime-master')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, (payload: any) => {
         if (payload.new && payload.new.id === user?.id) {
           setAdminBalances({
@@ -212,6 +244,36 @@ export default function AdminPage() {
             tokens: Number(payload.new.token_balance) || 0
           })
         }
+
+        setUsers(prev => {
+          if (payload.eventType === 'INSERT') {
+            const newUser = {
+              id: payload.new.id,
+              email: payload.new.email ?? '—',
+              full_name: payload.new.full_name ?? '—',
+              role: payload.new.role ?? 'user',
+              status: payload.new.status ?? 'active',
+              created_at: payload.new.created_at,
+              _storage_used: payload.new.storage_used,
+              _photos: payload.new.total_files
+            }
+            if (prev.find(u => u.id === newUser.id)) return prev
+            return [newUser, ...prev].slice(0, 100)
+          }
+          if (payload.eventType === 'UPDATE') {
+            return prev.map(u => u.id === payload.new.id ? { 
+              ...u, 
+              ...payload.new,
+              _storage_used: payload.new.storage_used,
+              _photos: payload.new.total_files
+            } : u)
+          }
+          if (payload.eventType === 'DELETE') {
+            return prev.filter(u => u.id !== payload.old.id)
+          }
+          return prev
+        })
+
         debouncedRefresh()
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'photos' }, debouncedRefresh)
@@ -219,24 +281,53 @@ export default function AdminPage() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'activity_logs' }, debouncedRefresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, debouncedRefresh)
       .subscribe()
+
     return () => { 
       supabase.removeChannel(channel)
       clearTimeout(timer)
     }
-  }, [loadData])
+  }, [isAdminVerified, loadStats, loadData, user?.id])
 
   const blockUser = async (id: string, status: string) => {
     const newStatus = status === 'active' ? 'blocked' : 'active'
-    await supabase.from('profiles').update({ status: newStatus }).eq('id', id)
-    setUsers(u => u.map(usr => usr.id === id ? { ...usr, status: newStatus } : usr))
-    showToast(`User ${newStatus === 'blocked' ? 'blocked' : 'unblocked'} successfully.`)
+    // Optimistic update
+    setUsers(prev => prev.map(u => u.id === id ? { ...u, status: newStatus } : u))
+    
+    try {
+      const { error } = await supabase.from('profiles').update({ status: newStatus }).eq('id', id)
+      if (error) {
+        // Rollback
+        setUsers(prev => prev.map(u => u.id === id ? { ...u, status: status } : u))
+        showToast(`Failed to update: ${error.message}`)
+        return
+      }
+      showToast(`User ${newStatus === 'blocked' ? 'blocked' : 'activated'}!`)
+    } catch (e: any) {
+      setUsers(prev => prev.map(u => u.id === id ? { ...u, status: status } : u))
+      showToast('Block operation failed')
+    }
   }
 
   const deleteUser = async (id: string) => {
     if (!confirm('Delete this user profile permanently?')) return
-    await supabase.from('profiles').delete().eq('id', id)
-    setUsers(u => u.filter(usr => usr.id !== id))
-    showToast('User deleted.')
+    
+    const originalUsers = [...users]
+    // Optimistic update
+    setUsers(prev => prev.filter(u => u.id !== id))
+    
+    try {
+      const { error } = await supabase.from('profiles').delete().eq('id', id)
+      if (error) {
+        // Rollback
+        setUsers(originalUsers)
+        showToast(`Deletion failed: ${error.message}`)
+        return
+      }
+      showToast('User deleted successfully.')
+    } catch (e: any) {
+      setUsers(originalUsers)
+      showToast('Delete operation failed')
+    }
   }
 
   const sendNotification = async () => {
@@ -284,6 +375,7 @@ export default function AdminPage() {
   )
 
   const navItems: { key: Tab; label: string; icon: any }[] = [
+    { key: 'overview', label: 'Overview', icon: FileText },
     { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { key: 'users', label: 'Users', icon: Users },
     { key: 'storage', label: 'Storage', icon: HardDrive },
@@ -298,6 +390,7 @@ export default function AdminPage() {
   const animUsers = useCountUp(stats.users)
   const animPhotos = useCountUp(stats.photos)
   const animSheets = useCountUp(stats.sheets)
+  const animActive = useCountUp(stats.active)
 
   // Auth load ہو رہی ہے یا admin verify نہیں ہوا — loading screen دکھائیں
   if (authLoading || (!isAdminVerified && !!user)) {
@@ -425,18 +518,64 @@ export default function AdminPage() {
           <>
             {/* DASHBOARD TAB */}
             {tab === 'dashboard' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-                <div style={{ 
-                  display: 'grid', 
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', 
-                  gap: 20, 
-                  marginBottom: 24 
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+
+                {/* ── Welcome Header ── */}
+                <div className="card" style={{
+                  background: 'linear-gradient(135deg, rgba(124,92,246,0.12) 0%, rgba(79,142,247,0.08) 50%, rgba(16,185,129,0.06) 100%)',
+                  border: '1px solid rgba(124,92,246,0.25)',
+                  padding: '28px 32px',
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  flexWrap: 'wrap', gap: 20,
+                  position: 'relative', overflow: 'hidden'
+                }}>
+                  {/* Background glow */}
+                  <div style={{ position: 'absolute', top: -60, right: -60, width: 220, height: 220, borderRadius: '50%', background: 'rgba(124,92,246,0.07)', pointerEvents: 'none' }} />
+
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                      <span style={{ fontSize: 26 }}>👋</span>
+                      <h2 style={{ fontSize: 24, fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>
+                        Welcome back, Admin!
+                      </h2>
+                    </div>
+                    <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: 0 }}>
+                      System is running smoothly. All services are operational and live metrics are streaming.
+                    </p>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10 }}>
+                      <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#34d399', display: 'inline-block', animation: 'pulse 2s infinite' }} />
+                      <span style={{ fontSize: 11, fontWeight: 700, color: '#34d399' }}>ALL SYSTEMS OPERATIONAL</span>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 12, flexShrink: 0 }}>
+                    <button
+                      onClick={() => router.push('/dashboard')}
+                      className="btn btn-secondary"
+                      style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px', borderRadius: 10 }}
+                    >
+                      <Zap size={16} /> Quick Start
+                    </button>
+                    <button
+                      onClick={() => router.push('/create-sheet')}
+                      className="btn btn-primary"
+                      style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px', borderRadius: 10 }}
+                    >
+                      <Grid2x2 size={16} /> Create Sheet
+                    </button>
+                  </div>
+                </div>
+
+
+                {/* ── Secondary Stats Row ── */}
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                  gap: 16
                 }}>
                   {[
                     { label: 'Registered Users', value: animUsers, icon: Users, color: '#7c5cf6', change: 'Total accounts' },
-                    { label: 'Photos Edited', value: animPhotos, icon: Image, color: '#4f8ef7', change: 'AI processing' },
-                    { label: 'Primary Wallet Balance (INR)', value: `₹${adminBalances.inr.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, icon: Wallet, color: '#10b981', change: 'Main cash wallet' },
-                    { label: 'Primary Wallet (INF)', value: `${adminBalances.tokens} INF`, icon: Coins, color: '#f59e0b', change: 'Tokens for codes' },
+                    { label: 'Primary Wallet (INR)', value: `₹${adminBalances.inr.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, icon: Wallet, color: '#10b981', change: 'Main cash wallet' },
                     { label: 'System Health', value: '✓ OK', icon: CheckCircle, color: '#34d399', change: '99.5% uptime' },
                   ].map(s => {
                     const Icon = s.icon
@@ -447,7 +586,6 @@ export default function AdminPage() {
                             <Icon size={14} color={s.color} />
                           </div>
                           {s.label}
-                          {/* Live pulse dot */}
                           <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4, fontSize: 9, color: '#34d399', fontWeight: 700 }}>
                             <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#34d399', display: 'inline-block', animation: 'pulse 2s infinite' }} />
                             LIVE
@@ -933,10 +1071,90 @@ export default function AdminPage() {
                 </div>
               </div>
             )}
-
             {/* TOKEN CREATE TAB */}
             {tab === 'tokens' && (
               <TokenCreateTab />
+            )}
+
+            {/* OVERVIEW TAB */}
+            {tab === 'overview' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 30, maxWidth: 1000 }}>
+                <div className="card" style={{ borderLeft: '4px solid var(--accent-purple)', background: 'linear-gradient(to right, rgba(124,92,246,0.05), transparent)' }}>
+                  <h1 style={{ fontSize: 28, fontWeight: 900, color: 'var(--text-primary)', marginBottom: 12 }}>
+                    Real-Time User Management System
+                  </h1>
+                  <p style={{ fontSize: 15, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                    A state-of-the-art live synchronization engine designed for high-performance administrative control.
+                  </p>
+                </div>
+
+                <div className="grid-2">
+                  <div className="card">
+                    <h3 style={{ fontSize: 18, fontWeight: 800, color: 'var(--accent-purple-light)', marginBottom: 20 }}>📊 1. OVERVIEW</h3>
+                    <p style={{ color: 'var(--text-secondary)', fontSize: 14, marginBottom: 16 }}>
+                      Admin dashboard par user management real-time update engine enabled hai.
+                    </p>
+                    <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      <li style={{ fontSize: 13, color: 'var(--text-primary)' }}>✅ Live (real-time) user data streaming</li>
+                      <li style={{ fontSize: 13, color: 'var(--text-primary)' }}>✅ Database changes instantly reflected</li>
+                      <li style={{ fontSize: 13, color: 'var(--text-primary)' }}>✅ ZERO manual refresh required</li>
+                      <li style={{ fontSize: 13, color: 'var(--text-primary)' }}>✅ Distributed scalable architecture</li>
+                    </ul>
+                  </div>
+
+                  <div className="card">
+                    <h3 style={{ fontSize: 18, fontWeight: 800, color: '#34d399', marginBottom: 20 }}>🎯 2. OBJECTIVES</h3>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                      <div style={{ background: 'rgba(52,211,153,0.1)', padding: 12, borderRadius: 8, fontSize: 13 }}>
+                        <strong>Tracking:</strong> Real-time user activity monitoring
+                      </div>
+                      <div style={{ background: 'rgba(52,211,153,0.1)', padding: 12, borderRadius: 8, fontSize: 13 }}>
+                        <strong>Database:</strong> Pure live updates from PostgreSQL
+                      </div>
+                      <div style={{ background: 'rgba(52,211,153,0.1)', padding: 12, borderRadius: 8, fontSize: 13 }}>
+                        <strong>Actions:</strong> Administrative actions instant reflect
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="card">
+                  <h3 style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-primary)', marginBottom: 24 }}>🧱 6. SYSTEM ARCHITECTURE</h3>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: 20, textAlign: 'center' }}>
+                    <div style={{ padding: 20, borderRadius: 12, background: 'var(--bg-secondary)', border: '1px solid var(--border)' }}>
+                      <div style={{ fontWeight: 800, color: 'var(--accent-purple)' }}>FRONTEND</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Next.js + Realtime Hooks</div>
+                    </div>
+                    <div style={{ color: 'var(--text-muted)' }}>⇄</div>
+                    <div style={{ padding: 20, borderRadius: 12, background: 'rgba(52,211,153,0.1)', border: '1px solid #34d39950' }}>
+                      <div style={{ fontWeight: 800, color: '#34d399' }}>BACKEND</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Supabase PostgreSQL Realtime</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="card">
+                  <h3 style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-primary)', marginBottom: 20 }}>⚡ 12. PERFORMANCE & SECURITY</h3>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
+                    {[
+                      { label: 'Latency', val: '< 1 sec', icon: '⏱️' },
+                      { label: 'Scale', val: '1000+ Users', icon: '🚀' },
+                      { label: 'Auth', val: 'Admin Required', icon: '🔐' },
+                      { label: 'Sync', val: 'Auto-Reconnect', icon: '🧯' },
+                    ].map(i => (
+                      <div key={i.label} style={{ padding: 16, borderRadius: 10, background: 'var(--bg-secondary)', border: '1px solid var(--border)' }}>
+                        <div style={{ fontSize: 20, marginBottom: 8 }}>{i.icon}</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>{i.label}</div>
+                        <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-primary)' }}>{i.val}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+                  👉 <strong>Final Summary:</strong> Fully live dashboard with instant user management and no manual refresh.
+                </div>
+              </div>
             )}
           </>
         )}

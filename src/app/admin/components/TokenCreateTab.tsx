@@ -1,94 +1,102 @@
-'use client'
+    'use client'
 
-import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
-import {
-    Plus, Zap, Gift, Percent, HardDrive, Tag,
-    Copy, RefreshCw, Loader2, Trash2, Edit2,
-    X, Shield, CheckCircle, Phone, Calendar,
-    Clock, ToggleLeft, ToggleRight, ChevronDown, 
-    Wallet, ArrowUpCircle, AlertTriangle, Lock
-} from 'lucide-react'
-import { supabase } from '@/lib/supabase'
+    import { useState, useEffect } from 'react'
+    import { useRouter } from 'next/navigation'
+    import {
+        Plus, Zap, Gift, Percent, HardDrive, Tag,
+        Copy, RefreshCw, Loader2, Trash2, Edit2,
+        X, Shield, CheckCircle, Phone, Calendar,
+        Clock, ToggleLeft, ToggleRight, ChevronDown, 
+        Wallet, ArrowUpCircle, AlertTriangle, Lock, Unlock, KeyRound
+    } from 'lucide-react'
+    import { supabase } from '@/lib/supabase'
 
-type TokenType = 'discount' | 'storage' | 'offer' | 'off'
+    type TokenType = 'discount' | 'storage' | 'offer' | 'off'
+    type AccessMode = 'lock' | 'open'
 
-interface TokenRecord {
-    id: string
-    token_code: string
-    name: string
-    token_type: TokenType
-    value: string
-    status: boolean
-    expiry_date: string | null
-    expiry_time: string | null
-    created_at: string
-    used_count: number
-    max_usages: number
-    admin_id: string | null
-    contact: string | null
-}
-
-const TYPE_CONFIG: Record<TokenType, { label: string; icon: any; color: string; bg: string; desc: string }> = {
-    discount: { label: 'Discount',  icon: Percent,    color: '#ec4899', bg: 'rgba(236,72,153,0.12)',   desc: '% or flat discount on pricing' },
-    storage:  { label: 'Storage',   icon: HardDrive,  color: '#3b82f6', bg: 'rgba(59,130,246,0.12)',   desc: 'Extra cloud storage (GB)' },
-    offer:    { label: 'Offer',     icon: Gift,       color: '#7c5cf6', bg: 'rgba(124,92,246,0.12)',   desc: 'Special feature unlock' },
-    off:      { label: 'Off',       icon: Tag,        color: '#f59e0b', bg: 'rgba(245,158,11,0.12)',   desc: 'Price reduction on plans' },
-}
-
-const emptyForm = {
-    name:  '',
-    token_type:  'discount' as TokenType,
-    value:       '10',
-    token_code:  '',
-    admin_id:    '',
-    max_usages: '100',
-    expiry_date: '',
-    expiry_time: '23:59',
-    contact:     '',
-    status:      true,
-}
-
-export default function TokenCreateTab() {
-    const router                        = useRouter()
-    const [form, setForm]               = useState({ ...emptyForm })
-    const [tokens, setTokens]           = useState<TokenRecord[]>([])
-    const [submitting, setSubmitting]   = useState(false)
-    const [editTarget, setEditTarget]   = useState<TokenRecord | null>(null)
-    const [copied, setCopied]           = useState<string | null>(null)
-    const [toast, setToast]             = useState<{ msg: string; ok: boolean } | null>(null)
-    const [balance, setBalance]         = useState<number>(0) // Primary Cash (INR)
-    const [tokenBalance, setTokenBalance] = useState<number>(0) // INF Tokens
-    const [user, setUser]               = useState<any>(null)
-
-    /* ─── helpers ─────────────────────────────────────────── */
-    const showToast = (msg: string, ok = true) => {
-        setToast({ msg, ok })
-        setTimeout(() => setToast(null), 3500)
+    interface TokenRecord {
+        id: string
+        token_code: string
+        name: string
+        token_type: TokenType
+        access_mode: AccessMode
+        value: string
+        status: boolean
+        expiry_date: string | null
+        expiry_time: string | null
+        created_at: string
+        used_count: number
+        max_usages: number
+        admin_id: string | null
+        contact: string | null
     }
 
-    const f = (key: keyof typeof form, val: any) =>
-        setForm(prev => ({ ...prev, [key]: val }))
+    const ACCESS_MODE_CONFIG: Record<AccessMode, { label: string; icon: any; color: string; bg: string; border: string; desc: string }> = {
+        open: { label: 'OPEN', icon: Unlock, color: '#10b981', bg: 'rgba(16,185,129,0.12)', border: 'rgba(16,185,129,0.35)', desc: 'All features unlocked for user ✅' },
+        lock: { label: 'LOCK', icon: Lock,   color: '#ef4444', bg: 'rgba(239,68,68,0.12)',   border: 'rgba(239,68,68,0.35)',   desc: 'All features disabled for user ❌' },
+    }
 
-    const generateCode = () => {
-        const prefix = form.token_type.toUpperCase().slice(0, 4)
-        const rand = (n: number) => {
-            const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-            return Array.from({ length: n }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
+    const TYPE_CONFIG: Record<TokenType, { label: string; icon: any; color: string; bg: string; desc: string }> = {
+        discount: { label: 'Discount',  icon: Percent,    color: '#ec4899', bg: 'rgba(236,72,153,0.12)',   desc: '% or flat discount on pricing' },
+        storage:  { label: 'Storage',   icon: HardDrive,  color: '#3b82f6', bg: 'rgba(59,130,246,0.12)',   desc: 'Extra cloud storage (GB)' },
+        offer:    { label: 'Offer',     icon: Gift,       color: '#7c5cf6', bg: 'rgba(124,92,246,0.12)',   desc: 'Special feature unlock' },
+        off:      { label: 'Off',       icon: Tag,        color: '#f59e0b', bg: 'rgba(245,158,11,0.12)',   desc: 'Price reduction on plans' },
+    }
+
+    const emptyForm = {
+        name:        '',
+        token_type:  'discount' as TokenType,
+        access_mode: 'open' as AccessMode,
+        value:       '10',
+        token_code:  '',
+        admin_id:    '', // Now optional
+        max_usages:  '100',
+        expiry_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // Default 30 days
+        expiry_time: '23:59',
+        contact:     '',
+        status:      true,
+    }
+
+    export default function TokenCreateTab() {
+        const router                        = useRouter()
+        const [form, setForm]               = useState({ ...emptyForm })
+        const [tokens, setTokens]           = useState<TokenRecord[]>([])
+        const [submitting, setSubmitting]   = useState(false)
+        const [editTarget, setEditTarget]   = useState<TokenRecord | null>(null)
+        const [copied, setCopied]           = useState<string | null>(null)
+        const [toast, setToast]             = useState<{ msg: string; ok: boolean } | null>(null)
+        const [balance, setBalance]         = useState<number>(0) // Primary Cash (INR)
+        const [tokenBalance, setTokenBalance] = useState<number>(0) // INF Tokens
+        const [user, setUser]               = useState<any>(null)
+
+        /* ─── helpers ─────────────────────────────────────────── */
+        const showToast = (msg: string, ok = true) => {
+            setToast({ msg, ok })
+            setTimeout(() => setToast(null), 3500)
         }
-        f('token_code', `${prefix}-${rand(4)}-${rand(4)}`)
-    }
 
-    /* ─── data ────────────────────────────────────────────── */
-    const loadTokens = async () => {
-        const { data } = await supabase
-            .from('promo_tokens')
-            .select('*')
-            .order('created_at', { ascending: false })
-        if (data) setTokens(data as TokenRecord[])
-    }
+        const f = (key: keyof typeof form, val: any) =>
+            setForm(prev => ({ ...prev, [key]: val }))
 
-    const fetchProfile = async () => {
+        const generateCode = () => {
+            const prefix = form.token_type.toUpperCase().slice(0, 4)
+            const rand = (n: number) => {
+                const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+                return Array.from({ length: n }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
+            }
+            f('token_code', `${prefix}-${rand(4)}-${rand(4)}`)
+        }
+
+        /* ─── data ────────────────────────────────────────────── */
+        const loadTokens = async () => {
+            const { data } = await supabase
+                .from('promo_tokens')
+                .select('*')
+                .order('created_at', { ascending: false })
+            if (data) setTokens(data as TokenRecord[])
+        }
+
+        const fetchProfile = async () => {
         const { data: { user: u } } = await supabase.auth.getUser()
         if (!u) return
         setUser(u)
@@ -179,8 +187,7 @@ export default function TokenCreateTab() {
     /* ─── submit ──────────────────────────────────────────── */
     const handleSubmit = async () => {
         if (!form.name.trim()) return showToast('Token name is required', false)
-        if (!form.admin_id.trim())  return showToast('Admin ID is required', false)
-        if (!form.expiry_date)      return showToast('Expiry date is required', false)
+        if (!form.expiry_date) return showToast('Expiry date is required', false)
 
         const code = form.token_code.trim() || (() => {
             const prefix = form.token_type.toUpperCase().slice(0, 4)
@@ -202,12 +209,13 @@ export default function TokenCreateTab() {
                 token_code:  code.toUpperCase(),
                 name:        form.name.trim(),
                 token_type:  form.token_type,
+                access_mode: form.access_mode,
                 value:       form.value,
                 status:      form.status,
                 expiry_date: form.expiry_date || null,
                 expiry_time: form.expiry_time || null,
                 max_usages:  parseInt(form.max_usages) || 100,
-                admin_id:    form.admin_id.trim(),
+                admin_id:    form.admin_id.trim() || null, // Allow null
                 contact:     form.contact.trim() || null,
                 user_id:     (await supabase.auth.getUser()).data.user?.id,
             }
@@ -269,6 +277,7 @@ export default function TokenCreateTab() {
         setForm({
             name:        t.name,
             token_type:  t.token_type,
+            access_mode: t.access_mode || 'open',
             value:       t.value,
             token_code:  t.token_code,
             admin_id:    t.admin_id || '',
@@ -391,6 +400,65 @@ export default function TokenCreateTab() {
                             </span>
                         </div>
 
+                        {/* Access Mode — LOCK / OPEN */}
+                        <div className="form-group">
+                            <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <KeyRound size={13} />
+                                Access Mode <span style={{ color: '#ef4444' }}>*</span>
+                                <span style={{ marginLeft: 4, fontSize: 9, background: 'rgba(239,68,68,0.15)', color: '#f87171', padding: '2px 7px', borderRadius: 4, fontWeight: 700, letterSpacing: 0.5 }}>CORE FEATURE</span>
+                            </label>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                                {(['open', 'lock'] as AccessMode[]).map(mode => {
+                                    const cfg = ACCESS_MODE_CONFIG[mode]
+                                    const Icon = cfg.icon
+                                    const isSelected = form.access_mode === mode
+                                    return (
+                                        <div
+                                            key={mode}
+                                            id={`access-mode-${mode}`}
+                                            onClick={() => f('access_mode', mode)}
+                                            style={{
+                                                display: 'flex', alignItems: 'center', gap: 12,
+                                                padding: '14px 16px', borderRadius: 12, cursor: 'pointer',
+                                                border: `2px solid ${isSelected ? cfg.color : 'var(--border)'}`,
+                                                background: isSelected ? cfg.bg : 'var(--bg-secondary)',
+                                                transition: 'all 0.2s', userSelect: 'none',
+                                                position: 'relative', overflow: 'hidden'
+                                            }}
+                                        >
+                                            {isSelected && (
+                                                <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: `${cfg.color}08`, pointerEvents: 'none' }} />
+                                            )}
+                                            <div style={{
+                                                width: 40, height: 40, borderRadius: 10,
+                                                background: isSelected ? `${cfg.color}22` : 'var(--border)',
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                flexShrink: 0, transition: 'all 0.2s'
+                                            }}>
+                                                <Icon size={20} color={isSelected ? cfg.color : 'var(--text-muted)'} />
+                                            </div>
+                                            <div style={{ flex: 1 }}>
+                                                <div style={{ fontSize: 15, fontWeight: 800, color: isSelected ? cfg.color : 'var(--text-secondary)', letterSpacing: 0.5 }}>
+                                                    {cfg.label}
+                                                </div>
+                                                <div style={{ fontSize: 11, color: isSelected ? cfg.color : 'var(--text-muted)', marginTop: 2, opacity: 0.85 }}>
+                                                    {cfg.desc}
+                                                </div>
+                                            </div>
+                                            {isSelected && (
+                                                <CheckCircle size={16} color={cfg.color} style={{ flexShrink: 0 }} />
+                                            )}
+                                        </div>
+                                    )
+                                })}
+                            </div>
+                            <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8, lineHeight: 1.5 }}>
+                                🔐 When user applies this token: <strong style={{ color: form.access_mode === 'lock' ? '#f87171' : '#34d399' }}>
+                                    {form.access_mode === 'lock' ? 'My Photos, Create Sheet, PVC Card, PDF Converter, PDF Crop, AI PDF Edit → Disabled ❌' : 'All features → Enabled ✅'}
+                                </strong>
+                            </p>
+                        </div>
+
                         {/* Row 2: Token Code + Value */}
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 }}>
                             <div className="form-group">
@@ -426,18 +494,17 @@ export default function TokenCreateTab() {
                         {/* Row 3: Admin ID (Required) + Max Usages */}
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 }}>
                             <div className="form-group">
-                                <label className="form-label" style={{ color: 'var(--accent-purple-light)' }}>
-                                    Admin ID ⚡ <span style={{ color: '#ef4444' }}>*</span>
-                                    <span style={{ marginLeft: 6, fontSize: 9, background: 'rgba(124,92,246,0.2)', color: '#a78bfa', padding: '2px 6px', borderRadius: 4, fontWeight: 700 }}>CONTROL KEY</span>
+                                <label className="form-label">
+                                    Admin ID ⚡ <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>(Optional)</span>
+                                    <span style={{ marginLeft: 6, fontSize: 9, background: 'rgba(124,92,246,0.2)', color: '#a78bfa', padding: '2px 6px', borderRadius: 4, fontWeight: 700 }}>RESTRICT KEY</span>
                                 </label>
                                 <input type="text" className="form-input"
-                                    placeholder="e.g. ADM-001"
+                                    placeholder="e.g. ADM-001 or leave empty"
                                     value={form.admin_id}
                                     onChange={e => f('admin_id', e.target.value)}
-                                    style={{ border: '1.5px solid rgba(124,92,246,0.4)' }}
                                 />
-                                <p style={{ fontSize: 10, color: '#a78bfa', margin: '4px 0 0 2px' }}>
-                                    🔐 Only users with this Admin ID can use this token
+                                <p style={{ fontSize: 10, color: 'var(--text-muted)', margin: '4px 0 0 2px' }}>
+                                    🔐 If set, only users with this Admin ID can use this token. Leave empty for public use.
                                 </p>
                             </div>
                             <div className="form-group">
@@ -541,7 +608,12 @@ export default function TokenCreateTab() {
 
                     {/* Stats */}
                     <div className="card" style={{ background: 'var(--bg-primary)' }}>
-                        <h4 style={{ fontSize: 14, fontWeight: 800, marginBottom: 18 }}>Token Overview</h4>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+                            <h4 style={{ fontSize: 14, fontWeight: 800, margin: 0 }}>Token Overview</h4>
+                            <button className="btn btn-secondary btn-sm" style={{ padding: '2px 8px', fontSize: 10 }} onClick={() => copyCode(user?.id || '')}>
+                                <Copy size={10} /> My Admin ID
+                            </button>
+                        </div>
                         {[
                             { label: 'Total Tokens',          value: tokens.length,     color: '#7c5cf6' },
                             { label: 'Active',                value: active,            color: '#10b981' },
@@ -573,6 +645,32 @@ export default function TokenCreateTab() {
                                 </div>
                             )
                         })}
+                    </div>
+
+                    {/* Access Mode Info Card */}
+                    <div className="card" style={{ background: 'rgba(124,92,246,0.04)', border: '1px solid rgba(124,92,246,0.2)', padding: 18 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+                            <KeyRound size={16} color="#7c5cf6" />
+                            <span style={{ fontSize: 13, fontWeight: 800, color: '#a78bfa' }}>Access Mode Logic</span>
+                        </div>
+                        {(['open', 'lock'] as AccessMode[]).map(mode => {
+                            const cfg = ACCESS_MODE_CONFIG[mode]
+                            const Icon = cfg.icon
+                            return (
+                                <div key={mode} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
+                                    <div style={{ width: 28, height: 28, borderRadius: 7, background: cfg.bg, border: `1px solid ${cfg.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                        <Icon size={13} color={cfg.color} />
+                                    </div>
+                                    <div>
+                                        <div style={{ fontSize: 12, fontWeight: 800, color: cfg.color }}>{cfg.label} Mode</div>
+                                        <div style={{ fontSize: 10, color: 'var(--text-muted)', lineHeight: 1.5, marginTop: 2 }}>{cfg.desc}</div>
+                                    </div>
+                                </div>
+                            )
+                        })}
+                        <p style={{ fontSize: 10, color: 'var(--text-muted)', lineHeight: 1.6, marginTop: 12, marginBottom: 0 }}>
+                            Affected features: <strong style={{ color: 'var(--text-secondary)' }}>My Photos, Create Sheet, PVC Card, PDF Converter, PDF Crop, AI PDF Edit</strong>
+                        </p>
                     </div>
 
                     {/* Admin ID Info */}
@@ -681,6 +779,7 @@ export default function TokenCreateTab() {
                             <tr>
                                 <th style={{ padding: '14px 28px' }}>Token Name</th>
                                 <th>Type</th>
+                                <th>Access Mode</th>
                                 <th>Token Code</th>
                                 <th>Admin ID ⚡</th>
                                 <th>Usage</th>
@@ -692,7 +791,7 @@ export default function TokenCreateTab() {
                         <tbody>
                             {tokens.length === 0 ? (
                                 <tr>
-                                    <td colSpan={8} style={{ textAlign: 'center', padding: '60px 0', color: 'var(--text-muted)' }}>
+                                    <td colSpan={9} style={{ textAlign: 'center', padding: '60px 0', color: 'var(--text-muted)' }}>
                                         <Gift size={40} style={{ margin: '0 auto 12px', display: 'block', opacity: 0.2 }} />
                                         No tokens yet. Create one above.
                                     </td>
@@ -716,6 +815,26 @@ export default function TokenCreateTab() {
                                             }}>
                                                 <Icon size={12} /> {cfg.label}
                                             </span>
+                                        </td>
+                                        {/* Access Mode Badge */}
+                                        <td>
+                                            {(() => {
+                                                const am = (token.access_mode || 'open') as AccessMode
+                                                const amCfg = ACCESS_MODE_CONFIG[am]
+                                                const AmIcon = amCfg.icon
+                                                return (
+                                                    <span style={{
+                                                        display: 'inline-flex', alignItems: 'center', gap: 5,
+                                                        padding: '5px 12px', borderRadius: 20,
+                                                        background: amCfg.bg,
+                                                        border: `1px solid ${amCfg.border}`,
+                                                        color: amCfg.color, fontSize: 12, fontWeight: 800,
+                                                        letterSpacing: 0.4
+                                                    }}>
+                                                        <AmIcon size={12} /> {amCfg.label}
+                                                    </span>
+                                                )
+                                            })()}
                                         </td>
                                         <td>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>

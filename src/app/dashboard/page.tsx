@@ -7,24 +7,23 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { useCountUp } from '@/lib/useCountUp'
 import {
-  Camera, Grid2x2, CreditCard, FileText,
-  Image, ArrowUpRight, HardDrive, Zap, CheckCircle,
-  Upload, Sparkles, RefreshCw, Lock
+  Camera, FileText, Grid2x2, HardDrive, Image, Lock, RefreshCw, Zap, ArrowUpRight, Upload, Sparkles, Scissors, CreditCard, CheckCircle
 } from 'lucide-react'
 
 const tools = [
-  { title: 'Upload Photo', desc: 'High-resolution single or batch upload with AI enhancement.', icon: Upload, href: '/photos', color: '#7c5cf6' },
+  { title: 'My Photos', desc: 'High-resolution single or batch upload with AI enhancement.', icon: Upload, href: '/photos', color: '#7c5cf6' },
   { title: 'Create Sheet', desc: 'Generate standardized 4×6 or A4 sheets for passport photos.', icon: Grid2x2, href: '/create-sheet', color: '#8b5cf6' },
   { title: 'PVC Card', desc: 'Format ID cards specifically for PVC plastic printers.', icon: CreditCard, href: '/pvc-card', color: '#4f8ef7' },
   { title: 'PDF Converter', desc: 'Convert any existing sheet layouts into print-ready PDFs.', icon: FileText, href: '/pdf-converter', color: '#22d3ee' },
+  { title: 'PDF Crop', desc: 'Surgically crop and extract specific sections from PDF documents.', icon: Scissors, color: '#ec4899', href: '/crop' },
+  { title: 'AI PDF Edit', desc: 'Use artificial intelligence to rewrite, edit, and translate PDF text.', icon: Sparkles, color: '#8b5cf6', href: '/ai-edit' },
 ]
 
 interface Stats {
   photos: number
   sheets: number
   active: number
-  storage_used: number
-  storage_limit: number
+  total_items: number
 }
 
 interface ActivityItem {
@@ -44,9 +43,10 @@ function timeAgo(dateStr: string) {
 }
 
 export default function DashboardPage() {
-  const { user, isStorageFull } = useAuth()
+  const { user, isStorageFull, featureAccessMode, storageUsage } = useAuth()
   const router = useRouter()
-  const [stats, setStats] = useState<Stats>({ photos: 0, sheets: 0, active: 0, storage_used: 0, storage_limit: 2147483648 })
+  const isLocked = featureAccessMode === 'lock'
+  const [stats, setStats] = useState<Stats>({ photos: 0, sheets: 0, active: 0, total_items: 0 })
   const [activity, setActivity] = useState<ActivityItem[]>([])
   const [loading, setLoading] = useState(true)
   const [lastRefresh, setLastRefresh] = useState(new Date())
@@ -54,8 +54,8 @@ export default function DashboardPage() {
   const displayName = user?.user_metadata?.full_name?.split(' ')[0] ?? user?.email?.split('@')[0] ?? 'User'
 
   const handleToolClick = (href: string) => {
-    if (isStorageFull && ['/photos', '/create-sheet', '/pvc-card', '/pdf-converter'].includes(href)) {
-      router.push('/upgrade')
+    if (isLocked && ['/photos', '/create-sheet', '/pvc-card', '/pdf-converter', '/crop', '/ai-edit'].includes(href)) {
+      router.push('/token/create')
       return
     }
     router.push(href)
@@ -65,31 +65,20 @@ export default function DashboardPage() {
     if (!user) return
     setLoading(true)
 
-    // Get storage from Supabase Storage bucket (more accurate)
-    const { data: storageData } = await supabase.storage.from('photos').list(user.id, {
-      limit: 100,
-    })
-    const storageUsed = storageData?.reduce((total, file) => total + (file.metadata?.size || 0), 0) || 0
-
-    const [photosRes, sheetsRes, profileRes, logsRes] = await Promise.all([
+    const [photosRes, sheetsRes, logsCountRes, logsRes] = await Promise.all([
       supabase.from('photos').select('*', { count: 'exact', head: true }).eq('user_id', user.id),
       supabase.from('sheets').select('*', { count: 'exact', head: true }).eq('user_id', user.id),
-      supabase.from('profiles').select('storage_used, storage_limit, storage_credit').eq('id', user.id).single(),
+      supabase.from('activity_logs').select('*', { count: 'exact', head: true }).eq('user_id', user.id),
       supabase.from('activity_logs').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(6),
     ])
 
     const activeRes = await supabase.from('photos').select('*', { count: 'exact', head: true }).eq('user_id', user.id).eq('status', 'processing')
 
-    const rawUsed = storageUsed > 0 ? storageUsed : (profileRes.data?.storage_used ?? 0)
-    const credit = profileRes.data?.storage_credit ?? 0
-    const compensatedUsed = Math.max(0, rawUsed - credit)
-
     setStats({
       photos: photosRes.count ?? 0,
       sheets: sheetsRes.count ?? 0,
       active: activeRes.count ?? 0,
-      storage_used: compensatedUsed,
-      storage_limit: profileRes.data?.storage_limit ?? 2147483648,
+      total_items: (logsCountRes.count ?? 0) * 3
     })
     setActivity(logsRes.data ?? [])
     setLastRefresh(new Date())
@@ -112,11 +101,11 @@ export default function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user])
 
-  const storagePct = stats.storage_limit > 0 ? Math.round((stats.storage_used / stats.storage_limit) * 100) : 0
-  const isStorageSmall = stats.storage_used > 0 && stats.storage_used < 1073741824
-  const storageValue = isStorageSmall ? (stats.storage_used / 1048576).toFixed(1) : (stats.storage_used / 1073741824).toFixed(2)
+  const storagePct = storageUsage.percent.toFixed(2)
+  const isStorageSmall = storageUsage.used > 0 && storageUsage.used < 1073741824
+  const storageValue = isStorageSmall ? (storageUsage.used / 1048576).toFixed(1) : (storageUsage.used / 1073741824).toFixed(2)
   const storageUnit = isStorageSmall ? 'MB' : 'GB'
-  const limitGB = (stats.storage_limit / 1073741824).toFixed(1)
+  const limitGB = (storageUsage.limit / 1073741824).toFixed(1)
 
   // Animated counters
   const animPhotos = useCountUp(stats.photos)
@@ -131,9 +120,13 @@ export default function DashboardPage() {
   ]
 
   const getActivityIcon = (action: string) => {
-    if (action === 'sheet_generated') return { icon: Grid2x2, color: '#7c5cf6' }
-    if (action === 'photo_uploaded') return { icon: Upload, color: '#4f8ef7' }
-    if (action === 'bg_removed') return { icon: Sparkles, color: '#ec4899' }
+    if (action.includes('sheet')) return { icon: Grid2x2, color: '#7c5cf6' }
+    if (action.includes('photo')) return { icon: Upload, color: '#4f8ef7' }
+    if (action.includes('bg_removed')) return { icon: Sparkles, color: '#ec4899' }
+    if (action.includes('pvc')) return { icon: CreditCard, color: '#10b981' }
+    if (action.includes('pdf')) return { icon: FileText, color: '#f59e0b' }
+    if (action.includes('ai')) return { icon: Sparkles, color: '#8b5cf6' }
+    if (action.includes('crop')) return { icon: Scissors, color: '#ec4899' }
     return { icon: Camera, color: '#22d3ee' }
   }
 
@@ -170,14 +163,14 @@ export default function DashboardPage() {
                 id="quick-start-btn" 
                 className="btn btn-primary" 
                 onClick={() => handleToolClick('/photos')}
-                style={isStorageFull ? { opacity: 0.8, filter: 'grayscale(0.5)' } : {}}
+                style={isLocked ? { opacity: 0.8, filter: 'grayscale(0.5)' } : {}}
               >
-                {isStorageFull ? <Lock size={16} /> : <Camera size={16} />} 
-                {isStorageFull ? 'Storage Full' : 'Quick Start'}
+                {isLocked ? <Lock size={16} /> : <Camera size={16} />} 
+                {isLocked ? 'LOCKED' : 'Quick Start'}
               </button>
               <button id="view-history-btn" className="btn btn-secondary" onClick={() => handleToolClick('/create-sheet')}>
-                {isStorageFull && <Lock size={14} style={{ marginRight: 6 }} />}
-                Create Sheet
+                {isLocked && <Lock size={14} style={{ marginRight: 6 }} />}
+                {isLocked ? 'LOCKED' : 'Create Sheet'}
               </button>
             </div>
           </div>
@@ -215,26 +208,26 @@ export default function DashboardPage() {
             <div className="grid-2">
               {tools.map((tool) => {
                 const Icon = tool.icon
-                const isLocked = isStorageFull && tool.href !== '/dashboard'
+                const isToolLocked = isLocked && tool.href !== '/dashboard'
                 return (
                   <div
                     key={tool.title}
-                    className={`card ${isLocked ? '' : 'card-hover'}`}
+                    className={`card ${isToolLocked ? '' : 'card-hover'}`}
                     id={`tool-${tool.title.toLowerCase().replace(/\s+/g, '-')}`}
                     onClick={() => handleToolClick(tool.href)}
-                    style={{ position: 'relative', cursor: isLocked ? 'not-allowed' : 'pointer', opacity: isLocked ? 0.7 : 1 }}
+                    style={{ position: 'relative', cursor: isToolLocked ? 'not-allowed' : 'pointer', opacity: isToolLocked ? 0.7 : 1 }}
                   >
                     <div style={{ position: 'absolute', top: 16, right: 16 }}>
-                      {isLocked ? <Lock size={16} color="var(--accent-pink)" /> : <ArrowUpRight size={16} color="var(--text-muted)" />}
+                      {isToolLocked ? <Lock size={16} color="var(--accent-pink)" /> : <ArrowUpRight size={16} color="var(--text-muted)" />}
                     </div>
-                    <div style={{ width: 40, height: 40, borderRadius: 10, background: isLocked ? 'rgba(236,72,153,0.1)' : `${tool.color}20`, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
-                      <Icon size={20} color={isLocked ? 'var(--accent-pink)' : tool.color} />
+                    <div style={{ width: 40, height: 40, borderRadius: 10, background: isToolLocked ? 'rgba(236,72,153,0.1)' : `${tool.color}20`, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
+                      <Icon size={20} color={isToolLocked ? 'var(--accent-pink)' : tool.color} />
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                       <h4 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>{tool.title}</h4>
-                      {isLocked && <span style={{ fontSize: 9, fontWeight: 700, color: 'white', background: 'var(--accent-pink)', padding: '1px 5px', borderRadius: 4 }}>LOCKED</span>}
+                      {isToolLocked && <span style={{ fontSize: 9, fontWeight: 700, color: 'white', background: 'var(--accent-pink)', padding: '1px 5px', borderRadius: 4 }}>LOCKED</span>}
                     </div>
-                    <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6 }}>{isLocked ? 'Storage limit reached. Please upgrade to continue using this tool.' : tool.desc}</p>
+                    <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6 }}>{isToolLocked ? 'Access suspended or storage limit reached. Please upgrade to continue.' : tool.desc}</p>
                   </div>
                 )
               })}
@@ -258,10 +251,10 @@ export default function DashboardPage() {
               <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-secondary)' }}> / {limitGB} GB</span>
             </div>
             <div className="progress-bar" style={{ margin: '12px 0' }}>
-              <div className="progress-fill" style={{ width: `${storagePct}%` }} />
+              <div className="progress-fill" style={{ width: `${storageUsage.used > 0 ? Math.max(1.5, storageUsage.percent) : 0}%` }} />
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--text-secondary)' }}>
-              <span>{storagePct}% Used</span>
+              <span>{storagePct}% Used • {stats.total_items} Items Processed</span>
               <span style={{ color: 'var(--text-muted)' }}>{limitGB} GB total</span>
             </div>
             

@@ -2,10 +2,12 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react'
 import DashboardLayout from '@/components/DashboardLayout'
+import FeatureLock from '@/components/FeatureLock'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { Upload, X, CheckCircle, RefreshCw, HardDrive, Palette, Download } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import { removeBackground } from '@imgly/background-removal'
 
 // Preset colors: transparent (none), white, popular passport BG colors, and extras
 const PRESET_COLORS = [
@@ -30,7 +32,7 @@ const PRESET_COLORS = [
 ]
 
 export default function PhotosPage() {
-  const { user } = useAuth()
+  const { user, storageUsage } = useAuth()
   const router = useRouter()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -108,16 +110,23 @@ export default function PhotosPage() {
     reader.readAsDataURL(file)
 
     setProcessing(true)
+    setError('')
+    const statusText = document.getElementById('ai-status')
+    if (statusText) statusText.innerText = 'Preparing AI Engine...'
 
     try {
-      const formData = new FormData()
-      formData.append('image_file', file)
-      formData.append('size', 'auto')
+      // --- Free client-side AI background removal (no API key needed) ---
+      // First run downloads model from CDN (~5-10s), then cached in browser
+      if (statusText) statusText.innerText = 'Removing background (AI running in browser)...'
+      
+      const blob = await removeBackground(file, {
+        device: 'cpu',
+        publicPath: 'https://unpkg.com/@imgly/background-removal@1.7.0/dist/',
+        output: { format: 'image/png', quality: 1 },
+      })
 
-      const response = await fetch('/api/remove-bg', { method: 'POST', body: formData })
-      if (!response.ok) throw new Error('Background removal failed')
+      if (statusText) statusText.innerText = 'Finalizing image...'
 
-      const blob = await response.blob()
       const url = URL.createObjectURL(blob)
       setProcessedImage(url)
       setProcessedBlob(blob)  // triggers useEffect to composite
@@ -126,8 +135,8 @@ export default function PhotosPage() {
       if (user) {
         await supabase.from('activity_logs').insert({
           user_id: user.id,
-          action: 'bg_removed',
-          description: 'AI removed background',
+          action: 'photo_processed',
+          description: 'AI Background Removal',
           file_name: file.name,
         })
       }
@@ -148,27 +157,20 @@ export default function PhotosPage() {
             processed: true,
           })
 
-          // Update storage usage in profiles (original + processed)
-          const fileSize = file.size + blob.size
+          // Update storage usage in profiles (original + processed + 3MB fee)
+          const fileSize = file.size + blob.size + (3 * 1024 * 1024)
           const { data: profileData } = await supabase.from('profiles').select('storage_used').eq('id', user.id).single()
           if (profileData) {
             await supabase.from('profiles').update({
               storage_used: (profileData.storage_used || 0) + fileSize
             }).eq('id', user.id)
           }
-
-          // Log activity
-          await supabase.from('activity_logs').insert({
-            user_id: user.id,
-            action: 'photo_uploaded',
-            description: 'Uploaded and processed photo',
-            file_name: file.name,
-          })
         }
         setUploading(false)
       }
-    } catch {
-      setError('Background removal failed. Please try again.')
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Background removal failed. Please try again.'
+      setError(msg)
     }
 
     setProcessing(false)
@@ -204,7 +206,8 @@ export default function PhotosPage() {
 
   return (
     <DashboardLayout>
-      {/* Hidden canvas for compositing */}
+      <FeatureLock featureName="My Photos">
+        {/* Hidden canvas for compositing */}
       <canvas ref={canvasRef} style={{ display: 'none' }} />
 
       <div className="page-header">
@@ -339,14 +342,16 @@ export default function PhotosPage() {
                 <HardDrive size={14} />
                 Library Health
               </span>
-              <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>82% Full</span>
+              <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{storageUsage.percent}% Full</span>
             </div>
             <div className="progress-bar">
-              <div className="progress-fill" style={{ width: '82%', background: 'linear-gradient(90deg, var(--accent-purple), #ec4899)' }} />
+              <div className="progress-fill" style={{ width: `${storageUsage.percent}%`, background: 'linear-gradient(90deg, var(--accent-purple), #ec4899)' }} />
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 12, color: 'var(--text-secondary)' }}>
               <span>Total Storage</span>
-              <span>4.1 GB / 5.0 GB</span>
+              <span>
+                {(storageUsage.used / 1024 ** 3).toFixed(2)} GB / {(storageUsage.limit / 1024 ** 3).toFixed(1)} GB
+              </span>
             </div>
           </div>
 
@@ -463,6 +468,7 @@ export default function PhotosPage() {
           )}
         </div>
       </div>
+      </FeatureLock>
     </DashboardLayout>
   )
 }

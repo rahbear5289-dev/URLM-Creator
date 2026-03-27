@@ -216,34 +216,6 @@ export default function UpgradePage() {
   return (
     <DashboardLayout>
       <div style={{ position: 'relative' }}>
-        {/* Wallet Status Header */}
-        <div style={{ 
-          position: 'absolute', top: -10, right: 0, 
-          display: 'flex', alignItems: 'center', gap: 15,
-          background: 'rgba(26, 26, 46, 0.8)',
-          backdropFilter: 'blur(10px)',
-          padding: '10px 20px',
-          borderRadius: '14px',
-          border: '1px solid rgba(124, 92, 246, 0.25)',
-          boxShadow: '0 10px 30px rgba(0,0,0,0.2)',
-          zIndex: 10
-        }}>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-            <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.5)', fontWeight: 800 }}>PRIMARY WALLET BALANCE (INR)</span>
-            <div style={{ fontSize: '20px', fontWeight: 900, color: 'white', display: 'flex', alignItems: 'baseline', gap: 4 }}>
-              <span style={{ fontSize: '14px', color: '#10b981' }}>₹</span>
-              {balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
-              <Lock size={10} color="#10b981" />
-              <span style={{ fontSize: '9px', fontWeight: 800, color: '#10b981' }}>LOCKED & SECURED</span>
-            </div>
-          </div>
-          <div style={{ width: 40, height: 40, borderRadius: 10, background: 'rgba(124, 92, 246, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Wallet size={20} color="#a78bfa" />
-          </div>
-        </div>
-
         <div className="page-header" style={{ textAlign: 'center', marginBottom: 40 }}>
           <div style={{
             display: 'inline-flex',

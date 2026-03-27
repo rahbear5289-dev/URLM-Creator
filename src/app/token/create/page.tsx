@@ -4,7 +4,7 @@ import { useState } from 'react'
 import DashboardLayout from '@/components/DashboardLayout'
 import {
     Coins, CheckCircle, AlertCircle, Gift, Percent,
-    HardDrive, Tag, Loader2, Shield, Lock, ChevronRight
+    HardDrive, Tag, Loader2, Shield, Lock, Unlock, ChevronRight
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
@@ -14,6 +14,7 @@ interface TokenRecord {
     token_code: string
     name: string
     token_type: 'discount' | 'storage' | 'offer' | 'off'
+    access_mode: 'lock' | 'open'
     value: string
     status: boolean
     expiry_date: string | null
@@ -124,7 +125,37 @@ export default function TokenEnterPage() {
         setStep('claiming')
 
         try {
-            // Increment used_count
+            // First, fetch fresh profile data to get latest storage usage
+            const { data: profile } = await supabase
+                .from('profiles')
+                .select('storage_used, storage_credit, feature_access_mode')
+                .eq('id', user.id)
+                .single()
+
+            if (!profile) throw new Error('Profile not found')
+
+            const currentRawUsed = profile.storage_used || 0
+            const currentCredit = profile.storage_credit || 0
+
+            // Apply reward
+            const profileUpdates: any = { 
+                active_token_code: token.token_code,
+                feature_access_mode: token.access_mode || 'open'
+            }
+
+            if (token.token_type === 'storage') {
+                // Storage Token: Subtract value (GB) from actual usage (Reset effect)
+                const bytesToSubtract = (parseFloat(token.value) || 0) * 1024 ** 3
+                profileUpdates.storage_used = Math.max(0, currentRawUsed - bytesToSubtract)
+                profileUpdates.storage_credit = 0 // Cleanup legacy credits to avoid interference
+            } else if (token.access_mode === 'open') {
+                // Open Token: Reset usage to 0
+                profileUpdates.storage_used = 0
+                profileUpdates.storage_credit = 0
+                profileUpdates.feature_access_mode = 'open'
+            }
+
+            // Increment used_count on token
             await supabase
                 .from('promo_tokens')
                 .update({ used_count: token.used_count + 1 })
@@ -135,19 +166,17 @@ export default function TokenEnterPage() {
                 .from('token_redemptions')
                 .insert({ token_id: token.token_code, user_id: user.id })
 
-            // Apply reward
-            if (token.token_type === 'storage') {
-                const bytes = (parseInt(token.value) || 0) * 1024 ** 3
-                const curr  = storageUsage?.credit || 0
-                await supabase
-                    .from('profiles')
-                    .update({ storage_credit: curr + bytes })
-                    .eq('id', user.id)
-                await refreshPlan()
-            }
+            // Update user profile
+            await supabase
+                .from('profiles')
+                .update(profileUpdates)
+                .eq('id', user.id)
+            
+            await refreshPlan()
 
             setStep('done')
-        } catch {
+        } catch (err) {
+            console.error('Claim failed:', err)
             setStep('ready')
             setErrKey('not_found') // fallback error
         }
@@ -297,6 +326,16 @@ export default function TokenEnterPage() {
                             <span style={{ fontSize: 13, fontWeight: 800, color: 'white', textTransform: 'uppercase', letterSpacing: 1 }}>
                                 {cfg.label} Token
                             </span>
+                            
+                            {/* Access Mode Badge */}
+                            <span style={{ 
+                                marginLeft: 10, display: 'flex', alignItems: 'center', gap: 5, 
+                                background: 'rgba(255,255,255,0.2)', padding: '3px 10px', 
+                                borderRadius: 20, fontSize: 11, color: 'white', fontWeight: 800 
+                            }}>
+                                {token.access_mode === 'lock' ? <><Lock size={12} /> MODE: LOCK</> : <><Unlock size={12} /> MODE: OPEN</>}
+                            </span>
+
                             {token.admin_id && (
                                 <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(0,0,0,0.2)', padding: '3px 10px', borderRadius: 20, fontSize: 11, color: 'white', fontWeight: 700 }}>
                                     <Shield size={11} /> Admin ID Verified ✓
@@ -325,6 +364,16 @@ export default function TokenEnterPage() {
                                      : token.token_type === 'off'     ? `₹${token.value} Off`
                                      : token.value}
                                 </div>
+                                {token.access_mode === 'lock' && (
+                                    <div style={{ marginTop: 12, color: '#ef4444', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                                        <AlertCircle size={14} /> Attention: This token will LOCK platform features ❌
+                                    </div>
+                                )}
+                                {token.access_mode === 'open' && (
+                                    <div style={{ marginTop: 12, color: '#10b981', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                                        <CheckCircle size={14} /> This token will UNLOCK all platform features ✅
+                                    </div>
+                                )}
                             </div>
 
                             <button

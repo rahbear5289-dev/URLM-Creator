@@ -6,18 +6,21 @@ import { Printer, Download, RotateCw, ZoomIn, ZoomOut } from 'lucide-react'
 import { jsPDF } from 'jspdf'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
+import FeatureLock from '@/components/FeatureLock'
 
-const PHOTO_WIDTH_MM = 35
-const PHOTO_HEIGHT_MM = 45
+const PHOTO_WIDTH_MM = 30
+const PHOTO_HEIGHT_MM = 40
 const A4_WIDTH_MM = 210
 const A4_HEIGHT_MM = 297
-const MARGIN_MM = 5
-const GUTTER_MM = 3
+const MARGIN_X_MM = 10
+const MARGIN_Y_MM = 5
+const GUTTER_X_MM = 2
+const GUTTER_Y_MM = 1.15
 const PHOTOS_PER_ROW = 6
 
 export default function CreateSheetPage() {
   const { user } = useAuth()
-  const [photoCount, setPhotoCount] = useState(36)
+  const [photoCount, setPhotoCount] = useState(42)
   const [errorMsg, setErrorMsg] = useState('')
   const [layout, setLayout] = useState<'standard' | 'staggered'>('standard')
   const [borderThickness, setBorderThickness] = useState(1)
@@ -35,6 +38,11 @@ export default function CreateSheetPage() {
     { label: 'Red', value: '#e03030' },
     { label: 'Navy blue', value: '#1e3a5f' },
   ]
+
+  const [currentPage, setCurrentPage] = useState(1)
+
+  const PHOTOS_PER_PAGE = 42
+  const totalPages = Math.ceil(photoCount / PHOTOS_PER_PAGE)
 
   const renderPreview = async () => {
     const canvas = canvasRef.current
@@ -54,98 +62,62 @@ export default function CreateSheetPage() {
     // Clear canvas completely first
     ctx.clearRect(0, 0, canvasWidth, canvasHeight)
 
-    // Paper Background - Always white for printer-friendliness
+    // Paper Background
     ctx.fillStyle = '#ffffff'
     ctx.fillRect(0, 0, canvasWidth, canvasHeight)
 
     const photoW = mmToPx(PHOTO_WIDTH_MM)
     const photoH = mmToPx(PHOTO_HEIGHT_MM)
-    const margin = mmToPx(MARGIN_MM)
-    const gutter = mmToPx(GUTTER_MM)
+    const marginX = mmToPx(MARGIN_X_MM)
+    const marginY = mmToPx(MARGIN_Y_MM)
+    const gutterX = mmToPx(GUTTER_X_MM)
+    const gutterY = mmToPx(GUTTER_Y_MM)
 
-    // Pre-load all images for the grid
+    const startIndex = (currentPage - 1) * PHOTOS_PER_PAGE
+    const endIndex = Math.min(startIndex + PHOTOS_PER_PAGE, photoCount)
+    const countOnThisPage = endIndex - startIndex
+
     const loadedImages: HTMLImageElement[] = []
     if (photoList.length > 0) {
       await Promise.all(photoList.map(src => {
         return new Promise((resolve) => {
           const img = new Image()
           img.crossOrigin = 'anonymous'
-          img.onload = () => {
-            loadedImages.push(img)
-            resolve(true)
-          }
+          img.onload = () => { loadedImages.push(img); resolve(true) }
+          img.onerror = () => resolve(false)
           img.src = src
         })
       }))
     }
 
-    const rows = Math.ceil(photoCount / PHOTOS_PER_ROW)
+    let localCount = 0
+    for (let row = 0; row < 7; row++) {
+      for (let col = 0; col < PHOTOS_PER_ROW; col++) {
+        if (localCount >= countOnThisPage) break
+        const x = marginX + col * (photoW + gutterX)
+        const y = marginY + row * (photoH + gutterY)
 
-    // Calculate total grid size based on 100% scale
-    const gridW = PHOTOS_PER_ROW * photoW + (PHOTOS_PER_ROW - 1) * gutter
-    const gridH = rows * photoH + (rows - 1) * gutter
-
-    // Dynamically scale down if it overflows the A4 sheet boundaries
-    // We add margin * 2 to ensure we always have spacing from the paper edges
-    const scaleX = (canvasWidth - margin * 2) / gridW;
-    const scaleY = (canvasHeight - margin * 2) / gridH;
-
-    // Scale factor: If the grid is too large, it shrinks. If it's small, it keeps its true 35x45mm scale (max 1)
-    const scale = Math.min(1, scaleX, scaleY);
-
-    // Actual grid dimensions after taking scale into account
-    const actualGridW = gridW * scale
-
-    // Dynamic centering based on actual scaled dimensions
-    const marginX = (canvasWidth - actualGridW) / 2
-    // Start from top margin instead of vertically centering
-    const marginY = margin
-
-    let count = 0
-
-    for (let row = 0; row < rows; row++) {
-      for (let col = 0; col < PHOTOS_PER_ROW && count < photoCount; col++) {
-        const x = marginX + col * (photoW + gutter) * scale
-        const y = marginY + row * (photoH + gutter) * scale
-
-        const scaledPhotoW = photoW * scale
-        const scaledPhotoH = photoH * scale
-
-        // Photo background - Apply selected bgColor to the photo box
         if (bgColor !== 'transparent') {
           ctx.fillStyle = bgColor
-          ctx.fillRect(x, y, scaledPhotoW, scaledPhotoH)
+          ctx.fillRect(x, y, photoW, photoH)
         }
 
-        const currentImg = loadedImages[count % loadedImages.length]
+        const currentImg = loadedImages[(startIndex + localCount) % loadedImages.length]
         if (currentImg) {
-          ctx.drawImage(currentImg, x, y, scaledPhotoW, scaledPhotoH)
+          ctx.drawImage(currentImg, x, y, photoW, photoH)
         } else {
-          // Placeholder
-          ctx.fillStyle = '#e0e0e0'
-          ctx.fillRect(x, y, scaledPhotoW, scaledPhotoH)
-          ctx.fillStyle = '#9e9e9e'
-          ctx.font = '10px Inter'
-          ctx.textAlign = 'center'
-          ctx.fillText('Photo', x + scaledPhotoW / 2, y + scaledPhotoH / 2)
+          ctx.fillStyle = '#f3f4f6'
+          ctx.fillRect(x, y, photoW, photoH)
         }
 
-        // Border
         if (borderThickness > 0) {
           ctx.strokeStyle = '#cccccc'
           ctx.lineWidth = borderThickness
-          ctx.strokeRect(x, y, scaledPhotoW, scaledPhotoH)
+          ctx.strokeRect(x, y, photoW, photoH)
         }
-
-        count++
+        localCount++
       }
     }
-
-    // Watermark
-    ctx.fillStyle = 'rgba(150,150,150,0.3)'
-    ctx.font = '10px Inter'
-    ctx.textAlign = 'center'
-    ctx.fillText('URLM CREATOR STUDIO', canvasWidth / 2, canvasHeight - 8)
   }
 
   useEffect(() => {
@@ -158,7 +130,7 @@ export default function CreateSheetPage() {
   useEffect(() => {
     renderPreview()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [photoCount, layout, borderThickness, bgColor, photoList])
+  }, [photoCount, currentPage, layout, borderThickness, bgColor, photoList])
 
   const handleAddPhotos = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
@@ -178,74 +150,160 @@ export default function CreateSheetPage() {
   const removePhoto = (index: number) => {
     setPhotoList(prev => prev.filter((_, i) => i !== index))
   }
+  const getPageDataURL = async (pageNum: number): Promise<string> => {
+    const canvas = document.createElement('canvas')
+    const dpi = 300 // High-res for export
+    const mmToPx = (mm: number) => (mm / 25.4) * dpi
 
-  const handleDownloadPDF = async () => {
-    setGenerating(true)
-    const canvas = canvasRef.current
-    if (!canvas) return
+    const canvasWidth = mmToPx(A4_WIDTH_MM)
+    const canvasHeight = mmToPx(A4_HEIGHT_MM)
+    canvas.width = canvasWidth
+    canvas.height = canvasHeight
 
-    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-    const imgData = canvas.toDataURL('image/jpeg', 0.95)
-    pdf.addImage(imgData, 'JPEG', 0, 0, A4_WIDTH_MM, A4_HEIGHT_MM)
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return ''
 
-    // Generate filename with photo count
-    const fileName = `Passport_Sheet_${photoCount}photos_${Date.now()}.pdf`
-    pdf.save(fileName)
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, canvasWidth, canvasHeight)
 
-    // Log sheet generation to database
-    if (user) {
-      try {
-        await supabase.from('sheets').insert({
-          user_id: user.id,
-          photo_count: photoCount,
-          bg_color: bgColor,
-          file_name: fileName,
+    const photoW = mmToPx(PHOTO_WIDTH_MM)
+    const photoH = mmToPx(PHOTO_HEIGHT_MM)
+    const marginX = mmToPx(MARGIN_X_MM)
+    const marginY = mmToPx(MARGIN_Y_MM)
+    const gutterX = mmToPx(GUTTER_X_MM)
+    const gutterY = mmToPx(GUTTER_Y_MM)
+
+    const startIndex = (pageNum - 1) * PHOTOS_PER_PAGE
+    const endIndex = Math.min(startIndex + PHOTOS_PER_PAGE, photoCount)
+    const countOnThisPage = endIndex - startIndex
+
+    const loadedImages: HTMLImageElement[] = []
+    if (photoList.length > 0) {
+      await Promise.all(photoList.map(src => {
+        return new Promise((resolve) => {
+          const img = new Image()
+          img.crossOrigin = 'anonymous'
+          img.onload = () => { loadedImages.push(img); resolve(true) }
+          img.onerror = () => resolve(false)
+          img.src = src
         })
+      }))
+    }
 
-        // Log activity
-        await supabase.from('activity_logs').insert({
-          user_id: user.id,
-          action: 'sheet_generated',
-          description: `Generated A4 sheet with ${photoCount} photos`,
-          file_name: fileName,
-        })
-      } catch (err) {
-        console.error('Failed to log sheet generation:', err)
+    let localCount = 0
+    for (let row = 0; row < 7; row++) {
+      for (let col = 0; col < PHOTOS_PER_ROW; col++) {
+        if (localCount >= countOnThisPage) break
+        const x = marginX + col * (photoW + gutterX)
+        const y = marginY + row * (photoH + gutterY)
+
+        if (bgColor !== 'transparent') { ctx.fillStyle = bgColor; ctx.fillRect(x, y, photoW, photoH) }
+        const currentImg = loadedImages[(startIndex + localCount) % loadedImages.length]
+        if (currentImg) ctx.drawImage(currentImg, x, y, photoW, photoH)
+        if (borderThickness > 0) { ctx.strokeStyle = '#cccccc'; ctx.lineWidth = borderThickness * (dpi/96); ctx.strokeRect(x, y, photoW, photoH) }
+        localCount++
       }
     }
 
+    return canvas.toDataURL('image/jpeg', 0.95)
+  }
+
+  const handleDownloadPDF = async () => {
+    setGenerating(true)
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+    
+    for (let p = 1; p <= totalPages; p++) {
+      const dataUrl = await getPageDataURL(p)
+      if (p > 1) pdf.addPage()
+      pdf.addImage(dataUrl, 'JPEG', 0, 0, A4_WIDTH_MM, A4_HEIGHT_MM)
+    }
+
+    const fileName = `Passport_Sheet_${photoCount}photos_${Date.now()}.pdf`
+    pdf.save(fileName)
+
+    if (user) {
+      try {
+        await supabase.from('sheets').insert({ user_id: user.id, photo_count: photoCount, bg_color: bgColor, file_name: fileName })
+        await supabase.from('activity_logs').insert({ user_id: user.id, action: 'sheet_generated', description: `Downloaded PDF (${totalPages} pages)`, file_name: fileName })
+        
+        // Update storage usage (add 3MB simulation)
+        const { data: profile } = await supabase.from('profiles').select('storage_used').eq('id', user.id).single()
+        if (profile) {
+          await supabase.from('profiles').update({
+            storage_used: (profile.storage_used || 0) + (3 * 1024 * 1024)
+          }).eq('id', user.id)
+        }
+      } catch (err) { console.error(err) }
+    }
     setGenerating(false)
   }
 
-  const handlePrint = () => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const dataUrl = canvas.toDataURL('image/jpeg')
-    const win = window.open('')
-    win?.document.write(`<html><body style="margin:0"><img src="${dataUrl}" style="width:100%" onload="window.print()"/></body></html>`)
-
-    // Log print activity
+  const handleDownloadImage = async () => {
+    setGenerating(true)
+    const dataUrl = await getPageDataURL(currentPage)
+    const link = document.createElement('a')
+    link.download = `Passport_Photo_Sheet_${Date.now()}.jpg`
+    link.href = dataUrl
+    link.click()
+    
     if (user) {
-      supabase.from('activity_logs').insert({
-        user_id: user.id,
-        action: 'sheet_printed',
-        description: `Printed A4 sheet with ${photoCount} photos`,
-        file_name: `Print_${Date.now()}.pdf`,
-      }).then(({ error }) => {
-        if (error) console.error('Failed to log print activity:', error)
-      })
+      await supabase.from('activity_logs').insert({ user_id: user.id, action: 'sheet_downloaded', description: `Downloaded Image Page ${currentPage}`, file_name: link.download })
+      
+      // Update storage usage (add 3MB simulation)
+      const { data: profile } = await supabase.from('profiles').select('storage_used').eq('id', user.id).single()
+      if (profile) {
+        await supabase.from('profiles').update({
+          storage_used: (profile.storage_used || 0) + (3 * 1024 * 1024)
+        }).eq('id', user.id)
+      }
+    }
+    setGenerating(false)
+  }
+
+  const handlePrint = async () => {
+    const win = window.open('')
+    if (!win) return
+    win.document.write(`
+      <html>
+        <head>
+          <title>Print Sheet</title>
+          <style>
+            @page { size: A4; margin: 0; }
+            body { margin: 0; padding: 0; display: flex; flex-direction: column; align-items: center; }
+            .page { width: 210mm; height: 297mm; background: white; margin: 0; page-break-after: always; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+            img { width: 100%; height: auto; display: block; }
+          </style>
+        </head>
+        <body>
+    `)
+    
+    for (let p = 1; p <= totalPages; p++) {
+      const dataUrl = await getPageDataURL(p)
+      win.document.write(`<div class="page"><img src="${dataUrl}" /></div>`)
+    }
+    
+    win.document.write('<script>window.onload = () => { window.print(); window.close(); }</script></body></html>')
+    win.document.close()
+    
+    if (user) {
+      supabase.from('activity_logs').insert({ user_id: user.id, action: 'sheet_printed', description: `Printed Sheet (${totalPages} pages)`, file_name: `Print_${Date.now()}.pdf` }).then(() => {})
     }
   }
 
-  const rows = Math.ceil(photoCount / PHOTOS_PER_ROW)
 
   return (
     <DashboardLayout>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24 }}>
+      <FeatureLock featureName="Create Sheet">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24 }}>
         <h1 className="page-title">A4 Sheet Generator</h1>
         <div style={{ display: 'flex', gap: 10, marginLeft: 'auto', alignItems: 'center', color: 'var(--text-secondary)', fontSize: 13 }}>
           <span style={{ fontSize: 13 }}>📄 Passport Size</span>
           <span>📐 3.5cm × 4.5cm</span>
+          {totalPages > 1 && (
+             <span style={{ background: 'var(--bg-secondary)', padding: '2px 8px', borderRadius: 4, fontWeight: 700, color: 'var(--accent-purple-light)' }}>
+               {totalPages} PAGES
+             </span>
+          )}
         </div>
       </div>
 
@@ -258,32 +316,25 @@ export default function CreateSheetPage() {
             </h3>
 
             <div className="form-group">
-              <label className="form-label">How many photos? (Kitni photos chahiye)</label>
+              <label className="form-label">Total Photo Count? (Overall Total)</label>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: 'var(--bg-primary)', borderRadius: 8, border: '1px solid var(--border)', overflow: 'hidden' }}>
                 <input
                   id="photo-count-input"
                   type="number"
                   min={1}
-                  max={42}
+                  max={500}
                   value={photoCount}
                   onChange={(e) => {
                     const val = parseInt(e.target.value) || 1
-                    if (val > 42) {
-                      setErrorMsg('Error: Ek A4 paper pe maximum 42 photos hi aa sakti hain.')
-                      setPhotoCount(42)
-                    } else {
-                      setErrorMsg('')
-                      setPhotoCount(Math.max(1, val))
-                    }
+                    setPhotoCount(Math.min(500, Math.max(1, val)))
                   }}
                   className="form-input"
                   style={{ border: 'none', background: 'transparent', flex: 1, fontSize: 20, fontWeight: 700 }}
                 />
                 <span style={{ padding: '0 16px', color: 'var(--text-secondary)', fontSize: 13 }}>Photos</span>
               </div>
-              {errorMsg && <div style={{ color: '#ef4444', fontSize: 13, marginTop: 8, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>⚠️ {errorMsg}</div>}
-              <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: errorMsg ? 4 : 6 }}>
-                → {rows} rows × {PHOTOS_PER_ROW} photos/row on A4
+              <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>
+                → Each A4 page fits exactly 42 photos (6×7 grid).
               </p>
             </div>
 
@@ -379,7 +430,7 @@ export default function CreateSheetPage() {
               Print Now
             </button>
 
-            <button id="download-pdf-btn" className="btn btn-secondary btn-lg" style={{ width: '100%' }} onClick={handleDownloadPDF} disabled={generating}>
+            <button id="download-pdf-btn" className="btn btn-secondary btn-lg" style={{ width: '100%', marginBottom: 10 }} onClick={handleDownloadPDF} disabled={generating}>
               {generating ? (
                 <><RotateCw size={16} className="animate-spin" /> Generating...</>
               ) : (
@@ -387,9 +438,18 @@ export default function CreateSheetPage() {
               )}
             </button>
 
-            <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 12, textAlign: 'center' }}>
-              High-resolution 300 DPI output guaranteed.
-            </p>
+            <button id="download-image-btn" className="btn btn-secondary btn-lg" style={{ width: '100%' }} onClick={handleDownloadImage} disabled={generating || photoList.length === 0}>
+              <RotateCw size={16} /> DOWNLOAD IMAGE (JPG)
+            </button>
+
+            <div style={{ marginTop: 16, padding: 12, borderRadius: 8, background: 'rgba(236, 72, 153, 0.1)', border: '1px solid rgba(236, 72, 153, 0.2)' }}>
+              <p style={{ fontSize: 11, color: 'var(--accent-pink)', fontWeight: 600, textAlign: 'center', marginBottom: 4 }}>
+                ⚠️ IMPORTANT PRINT INSTRUCTION:
+              </p>
+              <p style={{ fontSize: 10, color: 'var(--text-secondary)', textAlign: 'center', lineHeight: '1.4' }}>
+                Print at 100% scale (Do not fit to page) for exact 30x40mm dimensions.
+              </p>
+            </div>
           </div>
 
           <div className="card">
@@ -399,7 +459,7 @@ export default function CreateSheetPage() {
             
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 16 }}>
               {photoList.map((src, idx) => (
-                <div key={idx} style={{ position: 'relative', aspectRatio: '35/45', borderRadius: 6, overflow: 'hidden', border: '1px solid var(--border)' }}>
+                <div key={idx} style={{ position: 'relative', aspectRatio: '3/4', borderRadius: 6, overflow: 'hidden', border: '1px solid var(--border)' }}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={src} alt="Uploaded" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                   <button 
@@ -455,7 +515,27 @@ export default function CreateSheetPage() {
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, padding: '10px 16px', background: 'var(--bg-card)', borderRadius: 8, border: '1px solid var(--border)' }}>
-            <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Page 1 of 1</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <button 
+                  className="btn btn-sm btn-secondary" 
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  style={{ width: 32, padding: 0 }}
+                >
+                  ←
+                </button>
+                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', minWidth: 80, textAlign: 'center' }}>
+                  Page {currentPage} of {totalPages}
+                </span>
+                <button 
+                  className="btn btn-sm btn-secondary" 
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  style={{ width: 32, padding: 0 }}
+                >
+                  →
+                </button>
+            </div>
             <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--text-secondary)', cursor: 'pointer' }}>
                 <input id="crop-marks-check" type="checkbox" defaultChecked style={{ accentColor: 'var(--accent-purple)' }} />
@@ -469,6 +549,7 @@ export default function CreateSheetPage() {
           </div>
         </div>
       </div>
+      </FeatureLock>
     </DashboardLayout>
   )
 }

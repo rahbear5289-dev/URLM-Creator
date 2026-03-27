@@ -28,7 +28,7 @@ const bottomItems = [
 export default function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
-  const { user, signOut, plan, isStorageFull } = useAuth()
+  const { user, signOut, plan, isStorageFull, storageUsage, featureAccessMode } = useAuth()
 
   const isAdmin = user?.email === 'admin@urlm.app' || user?.user_metadata?.role === 'admin'
   const isPro = plan === 'pro' || plan === 'business'
@@ -37,7 +37,7 @@ export default function Sidebar() {
 
   const handleNav = (href: string, locked?: boolean) => {
     if (locked) {
-      router.push('/upgrade')
+      router.push('/token/create')
       return
     }
     router.push(href)
@@ -80,7 +80,7 @@ export default function Sidebar() {
         {navItems.map((item) => {
           const Icon = item.icon
           const isActive = pathname === item.href
-          const isLocked = isStorageFull && item.lockable
+          const isLocked = featureAccessMode === 'lock' && item.lockable
 
           return (
             <button
@@ -143,6 +143,24 @@ export default function Sidebar() {
       </nav>
 
       <div className="sidebar-footer">
+        <div style={{ padding: '0 12px 16px', borderBottom: '1px solid var(--border)', marginBottom: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 8 }}>
+            <span>Account Storage</span>
+            <span>{storageUsage.percent.toFixed(2)}%</span>
+          </div>
+          <div className="progress-bar" style={{ height: 6, margin: '8px 0' }}>
+            <div className="progress-fill" style={{ width: `${storageUsage.used > 0 ? Math.max(1.5, storageUsage.percent) : 0}%` }} />
+          </div>
+          <div style={{ fontSize: 10, color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between' }}>
+            <span>
+              {storageUsage.used > 0 && storageUsage.used < 1073741824 
+                ? `${(storageUsage.used / 1048576).toFixed(1)} MB` 
+                : `${(storageUsage.used / 1073741824).toFixed(2)} GB`}
+            </span>
+            <span>{(storageUsage.limit / 1073741824).toFixed(1)} GB</span>
+          </div>
+        </div>
+
         {!isPro && (
           <button
             className="upgrade-btn"

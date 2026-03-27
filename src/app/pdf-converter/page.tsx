@@ -2,8 +2,11 @@
 
 import { useState, useRef } from 'react'
 import DashboardLayout from '@/components/DashboardLayout'
+import FeatureLock from '@/components/FeatureLock'
 import { Upload, Download, Eye, Trash2, Merge } from 'lucide-react'
 import { jsPDF } from 'jspdf'
+import { useAuth } from '@/contexts/AuthContext'
+import { supabase } from '@/lib/supabase'
 
 interface QueueItem {
   id: string
@@ -17,6 +20,7 @@ interface QueueItem {
 }
 
 export default function PDFConverterPage() {
+  const { user, storageUsage } = useAuth()
   const [queue, setQueue] = useState<QueueItem[]>([
     { id: '1', name: 'branding_assets_01.png', size: '4.2 MB', type: 'Image', status: 'converting', progress: 74 },
     { id: '2', name: 'annual_report_draft.docx', size: '1.8 MB', type: 'Document', status: 'pending' },
@@ -56,12 +60,30 @@ export default function PDFConverterPage() {
     setQueue((q) => q.map((item) => item.id === id ? { ...item, status: 'converting', progress: 0 } : item))
 
     // Simulate progress
-    for (const p of [0, 20, 40, 60, 80, 100]) {
-      await new Promise((r) => setTimeout(r, 200))
+    for (const p of [0, 20, 100]) {
+      await new Promise((r) => setTimeout(r, 100))
       setQueue((q) => q.map((item) => item.id === id ? { ...item, progress: p } : item))
     }
 
     const item = queue.find((i) => i.id === id)
+
+    if (user) {
+      await supabase.from('activity_logs').insert({
+        user_id: user.id,
+        action: 'pdf_converted',
+        description: `Converted ${item?.name || 'file'} to PDF`,
+        file_name: item?.name || 'unknown'
+      })
+
+      // Update storage usage (add 3MB simulation)
+      const { data: profile } = await supabase.from('profiles').select('storage_used').eq('id', user.id).single()
+      if (profile) {
+        await supabase.from('profiles').update({
+          storage_used: (profile.storage_used || 0) + (3 * 1024 * 1024)
+        }).eq('id', user.id)
+      }
+    }
+
     if (item?.file && item.file.type.includes('image')) {
       const reader = new FileReader()
       reader.onload = (e) => {
@@ -91,7 +113,8 @@ export default function PDFConverterPage() {
 
   return (
     <DashboardLayout>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
+      <FeatureLock featureName="PDF Converter">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
         <div>
           <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent-blue)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
             <div style={{ width: 20, height: 2, background: 'var(--accent-blue)' }} />
@@ -225,14 +248,14 @@ export default function PDFConverterPage() {
                 <div style={{ position: 'relative', width: 48, height: 48 }}>
                   <svg viewBox="0 0 36 36" style={{ width: 48, height: 48, transform: 'rotate(-90deg)' }}>
                     <circle cx="18" cy="18" r="15.9" fill="none" stroke="var(--border)" strokeWidth="3" />
-                    <circle cx="18" cy="18" r="15.9" fill="none" stroke="var(--accent-purple)" strokeWidth="3" strokeDasharray={`${75 * 100} 100`} strokeLinecap="round" />
+                    <circle cx="18" cy="18" r="15.9" fill="none" stroke="var(--accent-purple)" strokeWidth="3" strokeDasharray={`${storageUsage.percent} 100`} strokeLinecap="round" />
                   </svg>
-                  <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: 'var(--text-primary)' }}>75%</span>
+                  <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: 'var(--text-primary)' }}>{storageUsage.percent}%</span>
                 </div>
                 <div>
                   <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>Account Storage</div>
                   <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                    1.5 GB of 2.0 GB used. <a href="/settings" style={{ color: 'var(--accent-blue)' }}>Upgrade</a>
+                    {(storageUsage.used / 1024 ** 3).toFixed(2)} GB of {(storageUsage.limit / 1024 ** 3).toFixed(1)} GB used. <a href="/token/create" style={{ color: 'var(--accent-blue)' }}>Upgrade</a>
                   </div>
                 </div>
               </div>
@@ -278,6 +301,7 @@ export default function PDFConverterPage() {
       <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: 11, marginTop: 32, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
         © 2024 URLM CREATOR STUDIO • ALL RIGHTS RESERVED
       </div>
+      </FeatureLock>
     </DashboardLayout>
   )
 }

@@ -2,7 +2,10 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import DashboardLayout from '@/components/DashboardLayout'
+import FeatureLock from '@/components/FeatureLock'
 import { Upload, Download, Scissors, ZoomIn, ZoomOut, ChevronLeft, ChevronRight, RotateCw, X } from 'lucide-react'
+import { useAuth } from '@/contexts/AuthContext'
+import { supabase } from '@/lib/supabase'
 
 // Library holders (browser only)
 let pdfjsLibInstance: any = null
@@ -24,6 +27,7 @@ async function getPdfLibraries() {
 }
 
 export default function CropPage() {
+    const { user } = useAuth()
     const [pdfFile, setPdfFile] = useState<File | null>(null)
     const [pdfDoc, setPdfDoc] = useState<any>(null)
     const [currentPage, setCurrentPage] = useState(1)
@@ -233,6 +237,25 @@ export default function CropPage() {
             const a = document.createElement('a')
             a.href = url
             a.download = `cropped_page_${currentPage}.pdf`
+            
+            // Log activity
+            if (user) {
+              await supabase.from('activity_logs').insert({
+                user_id: user.id,
+                action: 'pdf_cropped',
+                description: `Cropped PDF page ${currentPage}`,
+                file_name: pdfFile.name
+              })
+
+              // Update storage usage (add 3MB simulation)
+              const { data: profile } = await supabase.from('profiles').select('storage_used').eq('id', user.id).single()
+              if (profile) {
+                await supabase.from('profiles').update({
+                  storage_used: (profile.storage_used || 0) + (3 * 1024 * 1024)
+                }).eq('id', user.id)
+              }
+            }
+
             a.click()
 
             URL.revokeObjectURL(url)
@@ -243,9 +266,10 @@ export default function CropPage() {
         setLoading(false)
     }
 
-    return (
-        <DashboardLayout>
-            <div style={{ maxWidth: 1400, margin: '0 auto' }}>
+  return (
+    <DashboardLayout>
+      <FeatureLock featureName="PDF Crop">
+        <div style={{ maxWidth: 1400, margin: '0 auto' }}>
                 <div className="page-header" style={{ marginBottom: 32 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
                         <div style={{
@@ -577,6 +601,7 @@ export default function CropPage() {
                     </div>
                 </div>
             </div>
-        </DashboardLayout>
-    )
+      </FeatureLock>
+    </DashboardLayout>
+  )
 }

@@ -7,10 +7,11 @@ import Sidebar from '@/components/Sidebar'
 import Header from '@/components/Header'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { user, loading, isStorageFull } = useAuth()
+  const { user, loading, signOut, plan, isStorageFull, storageUsage, featureAccessMode } = useAuth()
   const router = useRouter()
   const pathname = usePathname()
 
+  const isLocked = featureAccessMode === 'lock'
   const restrictedPaths = ['/photos', '/create-sheet', '/pvc-card', '/pdf-converter', '/crop', '/ai-edit']
 
   useEffect(() => {
@@ -19,11 +20,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       return
     }
 
-    // Redirect if storage is full and user tries to access restricted tools
-    if (!loading && isStorageFull && restrictedPaths.some(path => pathname.startsWith(path))) {
-      router.replace('/upgrade')
+    // Redirect if locked and user tries to access restricted tools
+    if (!loading && isLocked && restrictedPaths.some(path => pathname.startsWith(path))) {
+      router.replace('/token/create')
     }
-  }, [user, loading, isStorageFull, pathname, router])
+  }, [user, loading, isStorageFull, pathname, router, isLocked])
 
   if (loading) {
     return (
