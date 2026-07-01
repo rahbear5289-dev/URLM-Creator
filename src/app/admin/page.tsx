@@ -80,8 +80,12 @@ export default function AdminPage() {
       return
     }
     // DB سے role check کریں (email check backup کے طور پر)
-    // DB سے role check کریں
     const verifyAdmin = async () => {
+      if (user.email === ADMIN_EMAIL) {
+        setIsAdminVerified(true)
+        return
+      }
+
       const { data, error } = await supabase
         .from('profiles')
         .select('role')

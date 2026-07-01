@@ -1,9 +1,10 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import DashboardLayout from '@/components/DashboardLayout'
 import FeatureLock from '@/components/FeatureLock'
-import { Upload, FileText, Sparkles, Download, RefreshCw, ZoomIn, ZoomOut, ChevronLeft, ChevronRight, Wand2, Edit3, Type, X, Save, Languages, ListFilter, CheckCircle2, MoreHorizontal, FileDown, FileType } from 'lucide-react'
+import { Upload, Sparkles, Download, RefreshCw, ZoomIn, ZoomOut, ChevronLeft, ChevronRight, Wand2, Edit3, Type, X, Save, FileDown } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 
@@ -34,8 +35,13 @@ interface PageContent {
 }
 
 export default function AIEditPage() {
+    const router = useRouter()
     const { user } = useAuth()
     const [pdfFile, setPdfFile] = useState<File | null>(null)
+
+    useEffect(() => {
+        router.replace('/dashboard')
+    }, [router])
     const [pdfDoc, setPdfDoc] = useState<any>(null)
     const [currentPage, setCurrentPage] = useState(1)
     const [totalPages, setTotalPages] = useState(0)
@@ -52,6 +58,46 @@ export default function AIEditPage() {
     const [hasChanges, setHasChanges] = useState(false)
     const [renderedPage, setRenderedPage] = useState<string | null>(null)
     const [exportFormat, setExportFormat] = useState<'pdf' | 'docx' | 'txt'>('pdf')
+    const [activeTool, setActiveTool] = useState<string>('')
+    const [activeTab, setActiveTab] = useState<'Templates'|'Text'|'AI Tools'|'Pages'|'Export'|'Help'>('AI Tools')
+
+    const aiToolbarItems: { id: 'Templates'|'Text'|'AI Tools'|'Pages'|'Export'|'Help'; label: string }[] = [
+        { id: 'Templates', label: 'Templates' },
+        { id: 'Text', label: 'Text' },
+        { id: 'AI Tools', label: 'AI Tools' },
+        { id: 'Pages', label: 'Pages' },
+        { id: 'Export', label: 'Export' },
+        { id: 'Help', label: 'Help' }
+    ]
+    const promptTemplates = [
+        { title: 'Professional Rewrite', description: 'Turn selected text into business-ready copy.', prompt: 'Rewrite this text in a professional, polished tone:' },
+        { title: 'Marketing Copy', description: 'Make the text persuasive for customers.', prompt: 'Rewrite this text to make it more persuasive and customer-friendly:' },
+        { title: 'Executive Summary', description: 'Create a short, clear summary from the selected text.', prompt: 'Create a concise executive summary of this text:' },
+        { title: 'Bullet Points', description: 'Convert long paragraphs into scan-friendly bullets.', prompt: 'Turn this text into short bullet points:' },
+        { title: 'Headline Text', description: 'Generate a bold headline or title for the selected content.', prompt: 'Create a headline or title that captures the message of this text:' }
+    ]
+    const aiTools = [
+        { id: 'summarize', emoji: '📝', label: 'Summarize', subtitle: 'Core ideas', prompt: 'Summarize this text in a few clear bullet points:' },
+        { id: 'translate', emoji: '🌐', label: 'Translate', subtitle: 'Convert languages', prompt: 'Translate this text into Hindi (Hinglish):' },
+        { id: 'grammar', emoji: '✅', label: 'Grammar Fix', subtitle: 'Correct errors', prompt: 'Correct any grammar and spelling errors in this text:' },
+        { id: 'simplify', emoji: '✨', label: 'Simplify', subtitle: 'Easy language', prompt: 'Simplify this text so it is very easy to understand:' },
+        { id: 'formal', emoji: '🎓', label: 'Formalize', subtitle: 'Professional tone', prompt: 'Rewrite this text in a formal professional tone:' },
+        { id: 'casual', emoji: '😎', label: 'Casual', subtitle: 'Friendly tone', prompt: 'Rewrite this text in a more casual and friendly tone:' },
+        { id: 'expand', emoji: '➕', label: 'Expand', subtitle: 'Add detail', prompt: 'Expand this text with richer detail while keeping the meaning:' },
+        { id: 'shorten', emoji: '✂️', label: 'Shorten', subtitle: 'Concise copy', prompt: 'Shorten this text while keeping the key information:' },
+        { id: 'bullets', emoji: '•', label: 'Bullet List', subtitle: 'Easy scan', prompt: 'Turn this text into a short bullet point list:' },
+        { id: 'paraphrase', emoji: '♻️', label: 'Paraphrase', subtitle: 'Rewrite wording', prompt: 'Paraphrase this text with different wording:' },
+        { id: 'seo', emoji: '🔎', label: 'SEO Optimize', subtitle: 'Search friendly', prompt: 'Rewrite this text for SEO with clear keywords:' },
+        { id: 'outline', emoji: '🗂️', label: 'Outline', subtitle: 'Structure ideas', prompt: 'Create a concise outline from this text:' },
+        { id: 'tone-neutral', emoji: '⚖️', label: 'Tone Neutral', subtitle: 'Balanced style', prompt: 'Rewrite this text in a neutral tone:' },
+        { id: 'proofread', emoji: '🧐', label: 'Proofread', subtitle: 'Polish writing', prompt: 'Proofread this text and make it publication-ready:' },
+        { id: 'cta', emoji: '👉', label: 'Add CTA', subtitle: 'Action prompt', prompt: 'Add a strong call to action to this text:' },
+        { id: 'keywords', emoji: '🏷️', label: 'Keywords', subtitle: 'Extract terms', prompt: 'Extract the main keywords from this text:' },
+        { id: 'rewrite', emoji: '🔁', label: 'Rewrite', subtitle: 'Fresh phrasing', prompt: 'Rewrite this text with a fresh style:' },
+        { id: 'title', emoji: '📰', label: 'Title Idea', subtitle: 'Headline help', prompt: 'Create a catchy title for this text:' },
+        { id: 'highlight', emoji: '💡', label: 'Highlight', subtitle: 'Key points', prompt: 'Highlight the most important points in this text:' },
+        { id: 'jargon', emoji: '🚫', label: 'Remove Jargon', subtitle: 'Plain language', prompt: 'Rewrite this text to remove jargon and make it easier to understand:' }
+    ]
 
     const canvasRef = useRef<HTMLCanvasElement>(null)
     const fileInputRef = useRef<HTMLInputElement>(null)
@@ -230,25 +276,50 @@ export default function AIEditPage() {
         setProcessing(true)
 
         // Simulate AI processing (in production, connect to real AI API)
-        await new Promise(resolve => setTimeout(resolve, 2000))
+        await new Promise(resolve => setTimeout(resolve, 1400))
 
         const currentContent = pageContents[selectedPageIndex]
         const selectedTextTrimmed = selectedText.trim()
         const editedTextOriginal = currentContent.editedText
         const promptLower = aiPrompt.toLowerCase()
 
-        // Simple AI simulation based on prompt
         let transformedText = editedTextOriginal
-        if (promptLower.includes('simplify') || promptLower.includes('simple')) {
-            transformedText = transformedText.replace(selectedTextTrimmed, "[Simplified: " + selectedTextTrimmed + "]")
+        if (promptLower.includes('summarize') || promptLower.includes('bullet')) {
+            transformedText = editedTextOriginal.replace(selectedTextTrimmed, `[Summary]\n• ${selectedTextTrimmed.split(/\. |, /).slice(0, 4).join('\n• ')}...`)
+        } else if (promptLower.includes('translate')) {
+            transformedText = editedTextOriginal.replace(selectedTextTrimmed, `[Translated to Hindi]\n${selectedTextTrimmed}`)
+        } else if (promptLower.includes('grammar') || promptLower.includes('proofread') || promptLower.includes('correct')) {
+            transformedText = editedTextOriginal.replace(selectedTextTrimmed, `[Corrected: ${selectedTextTrimmed}]`)
+        } else if (promptLower.includes('simplify') || promptLower.includes('easy to understand')) {
+            transformedText = editedTextOriginal.replace(selectedTextTrimmed, `[Simplified: ${selectedTextTrimmed}]`)
         } else if (promptLower.includes('formal') || promptLower.includes('professional')) {
-            transformedText = transformedText.replace(selectedTextTrimmed, "[Formal: " + selectedTextTrimmed + "]")
-        } else if (promptLower.includes('grammar') || promptLower.includes('fix')) {
-            transformedText = transformedText.replace(selectedTextTrimmed, "[Corrected: " + selectedTextTrimmed + "]")
-        } else if (promptLower.includes('shorten') || promptLower.includes('summary')) {
-            transformedText = transformedText.replace(selectedTextTrimmed, "[Summary: " + selectedTextTrimmed.substring(0, 50) + "...]")
+            transformedText = editedTextOriginal.replace(selectedTextTrimmed, `[Formal: ${selectedTextTrimmed}]`)
+        } else if (promptLower.includes('casual') || promptLower.includes('friendly')) {
+            transformedText = editedTextOriginal.replace(selectedTextTrimmed, `[Casual: ${selectedTextTrimmed}]`)
+        } else if (promptLower.includes('expand') || promptLower.includes('detail')) {
+            transformedText = editedTextOriginal.replace(selectedTextTrimmed, `[Expanded: ${selectedTextTrimmed} ...more details added]`)
+        } else if (promptLower.includes('shorten') || promptLower.includes('concise')) {
+            transformedText = editedTextOriginal.replace(selectedTextTrimmed, `[Shortened: ${selectedTextTrimmed.slice(0, 80)}...]`)
+        } else if (promptLower.includes('paraphrase') || promptLower.includes('rewrite')) {
+            transformedText = editedTextOriginal.replace(selectedTextTrimmed, `[Rewritten: ${selectedTextTrimmed}]`)
+        } else if (promptLower.includes('seo')) {
+            transformedText = editedTextOriginal.replace(selectedTextTrimmed, `[SEO Optimized: ${selectedTextTrimmed}]`)
+        } else if (promptLower.includes('outline')) {
+            transformedText = editedTextOriginal.replace(selectedTextTrimmed, `[Outline]\n1. ${selectedTextTrimmed.split(/\. |, /)[0]}\n2. ...`)
+        } else if (promptLower.includes('tone neutral')) {
+            transformedText = editedTextOriginal.replace(selectedTextTrimmed, `[Neutral Tone: ${selectedTextTrimmed}]`)
+        } else if (promptLower.includes('cta')) {
+            transformedText = editedTextOriginal.replace(selectedTextTrimmed, `${selectedTextTrimmed} \n\n[Call to action: Learn more today!]`)
+        } else if (promptLower.includes('keywords') || promptLower.includes('key terms')) {
+            transformedText = editedTextOriginal.replace(selectedTextTrimmed, `[Keywords: ${selectedTextTrimmed.split(/\s+/).slice(0, 5).join(', ')}]`)
+        } else if (promptLower.includes('title')) {
+            transformedText = editedTextOriginal.replace(selectedTextTrimmed, `[Title: ${selectedTextTrimmed.slice(0, 30)}]`)
+        } else if (promptLower.includes('highlight')) {
+            transformedText = editedTextOriginal.replace(selectedTextTrimmed, `[Highlighted: ${selectedTextTrimmed}]`)
+        } else if (promptLower.includes('jargon')) {
+            transformedText = editedTextOriginal.replace(selectedTextTrimmed, `[Plain Language: ${selectedTextTrimmed}]`)
         } else {
-            transformedText = transformedText.replace(selectedTextTrimmed, "[AI Edit: " + selectedTextTrimmed + "]")
+            transformedText = editedTextOriginal.replace(selectedTextTrimmed, `[AI Edit: ${selectedTextTrimmed}]`)
         }
 
         if (transformedText === editedTextOriginal) {
@@ -272,15 +343,12 @@ export default function AIEditPage() {
             alert('Please select some text from the page content first.')
             return
         }
-        let prompt = ''
-        switch (tool) {
-            case 'summarize': prompt = 'Summarize this text in a few clear bullet points:'; break
-            case 'translate': prompt = 'Translate this text into Hindi (Hinglish):'; break
-            case 'grammar': prompt = 'Correct any grammar and spelling errors in this text:'; break
-            case 'simplify': prompt = 'Simplify this text so it is very easy to understand:'; break
-        }
-        setAiPrompt(prompt)
-        // Wait for state to update, then submit
+
+        setActiveTool(tool)
+        const selectedTool = aiTools.find((item) => item.id === tool)
+        if (!selectedTool) return
+
+        setAiPrompt(selectedTool.prompt)
         setTimeout(() => handleAISubmit(), 100)
     }
 
@@ -482,9 +550,9 @@ export default function AIEditPage() {
 
     return (
         <DashboardLayout>
-            <FeatureLock featureName="AI PDF Edit">
+            <FeatureLock featureName="AI PDF Editor">
                 <div style={{ maxWidth: 1400, margin: '0 auto' }}>
-                    <div className="page-header" style={{ marginBottom: 32 }}>
+                    <div className="page-header" style={{ marginBottom: 24 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
                             <div style={{
                                 width: 48, height: 48, borderRadius: 12,
@@ -494,13 +562,25 @@ export default function AIEditPage() {
                                 <Sparkles size={24} color="white" />
                             </div>
                             <div>
-                                <h1 className="page-title" style={{ marginBottom: 4 }}>AI PDF Edit Tool</h1>
-                                <p className="page-subtitle">Upload PDF, select text, and use AI to edit or rewrite content</p>
+                                <h1 className="page-title" style={{ marginBottom: 4 }}>AI PDF Editor</h1>
+                                <p className="page-subtitle">Smart PDF rewriting with Canva-style editing tools, quick actions, and rich export controls.</p>
                             </div>
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 16 }}>
+                            {aiToolbarItems.map((item) => (
+                                <button
+                                    key={item.id}
+                                    className={`btn btn-sm ${activeTab === item.id ? 'btn-primary' : 'btn-secondary'}`}
+                                    style={{ minWidth: 110, padding: '10px 14px', textTransform: 'uppercase', letterSpacing: '0.6px' }}
+                                    onClick={() => setActiveTab(item.id as typeof activeTab)}
+                                >
+                                    {item.label}
+                                </button>
+                            ))}
                         </div>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: pdfDoc ? '280px 1fr 320px' : '1fr', gap: 20, alignItems: 'start' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: pdfDoc ? '280px 1fr 340px' : '1fr', gap: 20, alignItems: 'start' }}>
 
                         {/* Left Panel - Upload & Settings */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -523,7 +603,7 @@ export default function AIEditPage() {
                                         {pdfFile ? pdfFile.name : 'Drop PDF here'}
                                     </div>
                                     <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                                        PDF up to 20MB
+                                        Upload your PDF document and edit the current page directly from the page preview.
                                     </div>
                                 </div>
                                 <input ref={fileInputRef} type="file" accept=".pdf" onChange={handleFileChange} style={{ display: 'none' }} />
@@ -679,6 +759,12 @@ export default function AIEditPage() {
                                     }}>
                                         <canvas ref={canvasRef} style={{ display: 'block', maxWidth: '100%', visibility: renderedPage ? 'visible' : 'hidden' }} />
                                     </div>
+                                    <div className="card" style={{ padding: '14px 16px', marginBottom: 16, background: 'var(--bg-primary)', border: '1px solid var(--border)' }}>
+                                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 6 }}>Page Preview Active</div>
+                                        <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                                            The current PDF page is displayed above. Edit its extracted text below and download the updated document from this same page.
+                                        </div>
+                                    </div>
 
                                     {/* Extracted Text Content */}
                                     <div className="card" style={{ background: 'var(--bg-secondary)' }}>
@@ -732,7 +818,7 @@ export default function AIEditPage() {
                                             </div>
                                         )}
                                         <p style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 8, marginBottom: 0 }}>
-                                            {editMode ? 'You can type directly anywhere in the text above.' : 'Switch to Edit Mode to type directly, or select text above for AI tools.'}
+                                            {editMode ? 'You can type directly anywhere in the text above.' : 'Preview the current page above, then edit its text below and download the document from this same screen.'}
                                         </p>
                                     </div>
                                 </div>
@@ -747,8 +833,150 @@ export default function AIEditPage() {
                             )}
                         </div>
 
-                        {/* Right Panel - AI Edit Tools */}
+                        {/* Right Panel - AI Studio */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                            <div className="card">
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
+                                    <div>
+                                        <h3 style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                                            {activeTab} Studio
+                                        </h3>
+                                        <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: 0, maxWidth: 380 }}>
+                                            {activeTab === 'Templates' && 'Pick an AI template and use it to rewrite the selected page text quickly.'}
+                                            {activeTab === 'Text' && 'Edit text blocks directly, refine copy, and make content look sharp just like a design studio.'}
+                                            {activeTab === 'AI Tools' && 'Choose from 20 AI quick actions to transform selected text instantly.'}
+                                            {activeTab === 'Pages' && 'Jump between PDF pages, preview the current page, and keep the flow of your document.'}
+                                            {activeTab === 'Export' && 'Choose the best export format and download your edited PDF, DOCX, or TXT file.'}
+                                            {activeTab === 'Help' && 'Need help? Use these tips to get the most from your AI PDF editor.'}
+                                        </p>
+                                    </div>
+                                    <button
+                                        className="btn btn-sm btn-secondary"
+                                        onClick={() => setActiveTab('AI Tools')}
+                                        style={{ height: 32, alignSelf: 'center' }}
+                                    >
+                                        Go to AI Tools
+                                    </button>
+                                </div>
+
+                                {activeTab === 'Templates' && (
+                                    <div style={{ display: 'grid', gap: 10 }}>
+                                        {promptTemplates.map((template) => (
+                                            <button
+                                                key={template.title}
+                                                className="btn btn-secondary btn-sm"
+                                                onClick={() => setAiPrompt(template.prompt)}
+                                                style={{ justifyContent: 'flex-start', textAlign: 'left', padding: 14 }}
+                                            >
+                                                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>{template.title}</div>
+                                                <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{template.description}</div>
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {activeTab === 'Text' && (
+                                    <div style={{ display: 'grid', gap: 10 }}>
+                                        <div style={{ padding: 14, background: 'var(--bg-primary)', borderRadius: 10, border: '1px solid var(--border)' }}>
+                                            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Edit like a design studio</div>
+                                            <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                                                Use the preview panel to read page text, then switch to Edit Mode for direct text adjustments. When you select text, AI tools become available instantly.
+                                            </div>
+                                        </div>
+                                        <button
+                                            className={`btn btn-sm ${editMode ? 'btn-primary' : 'btn-secondary'}`}
+                                            onClick={() => setEditMode(!editMode)}
+                                            style={{ width: '100%' }}
+                                        >
+                                            {editMode ? 'Disable Edit Mode' : 'Enable Edit Mode'}
+                                        </button>
+                                    </div>
+                                )}
+
+                                {activeTab === 'AI Tools' && (
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+                                        {aiTools.map((tool) => (
+                                            <button
+                                                key={tool.id}
+                                                className={`btn btn-sm ${activeTool === tool.id ? 'btn-primary' : 'btn-secondary'}`}
+                                                onClick={() => applyQuickAITool(tool.id)}
+                                                style={{ justifyContent: 'flex-start', textAlign: 'left', padding: 14 }}
+                                            >
+                                                <div style={{ fontSize: 16, marginRight: 10 }}>{tool.emoji}</div>
+                                                <div>
+                                                    <div style={{ fontSize: 13, fontWeight: 700 }}>{tool.label}</div>
+                                                    <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{tool.subtitle}</div>
+                                                </div>
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {activeTab === 'Pages' && (
+                                    <div style={{ display: 'grid', gap: 12 }}>
+                                        <div style={{ padding: 14, background: 'var(--bg-primary)', borderRadius: 10, border: '1px solid var(--border)' }}>
+                                            <strong style={{ display: 'block', marginBottom: 6 }}>Page {currentPage} of {totalPages}</strong>
+                                            <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: 0 }}>Use the page list, navigation controls, and preview to stay on top of the document flow.</p>
+                                        </div>
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
+                                            {pageContents.map((content) => (
+                                                <button
+                                                    key={content.pageNum}
+                                                    className={`btn btn-sm ${currentPage === content.pageNum ? 'btn-primary' : 'btn-secondary'}`}
+                                                    onClick={() => {
+                                                        setCurrentPage(content.pageNum)
+                                                        setSelectedPageIndex(content.pageNum - 1)
+                                                    }}
+                                                    style={{ textAlign: 'left', padding: 12 }}
+                                                >
+                                                    Page {content.pageNum}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {activeTab === 'Export' && (
+                                    <div style={{ display: 'grid', gap: 12 }}>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                                            {['pdf', 'docx', 'txt'].map((fmt) => (
+                                                <button
+                                                    key={fmt}
+                                                    className={`btn btn-sm ${exportFormat === fmt ? 'btn-primary' : 'btn-secondary'}`}
+                                                    onClick={() => setExportFormat(fmt as any)}
+                                                    style={{ textTransform: 'uppercase' }}
+                                                >
+                                                    {fmt}
+                                                </button>
+                                            ))}
+                                        </div>
+                                        <button
+                                            className="btn btn-primary"
+                                            onClick={handleExport}
+                                            disabled={loading}
+                                            style={{ width: '100%', padding: '12px', borderRadius: 10 }}
+                                        >
+                                            <Download size={14} style={{ marginRight: 8 }} />
+                                            Export as {exportFormat.toUpperCase()}
+                                        </button>
+                                    </div>
+                                )}
+
+                                {activeTab === 'Help' && (
+                                    <div style={{ display: 'grid', gap: 12 }}>
+                                        <div style={{ padding: 14, background: 'var(--bg-primary)', borderRadius: 10, border: '1px solid var(--border)' }}>
+                                            <strong style={{ display: 'block', marginBottom: 6 }}>Pro Tips</strong>
+                                            <ul style={{ margin: 0, paddingLeft: 18, color: 'var(--text-secondary)', fontSize: 12, lineHeight: 1.7 }}>
+                                                <li>Select text from the page content to target exactly what you want to edit.</li>
+                                                <li>Use Templates for fast rewrites and AI Tools for precise text transformations.</li>
+                                                <li>Switch to Export mode to save as PDF, DOCX, or TXT after editing.</li>
+                                                <li>Keep the page preview visible to verify layout before downloading.</li>
+                                            </ul>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
                             {selectedText ? (
                                 <>
                                     {/* Selected Text Display */}
@@ -855,63 +1083,10 @@ export default function AIEditPage() {
                                         </div>
                                     </div>
 
-                                    {/* 4.9 AI Tools Panel: Quick Actions Sidebar */}
-                                    <div className="card">
-                                        <h3 style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: 16 }}>
-                                            🤖 AI Tools Sidebar
-                                        </h3>
-                                        <div style={{ display: 'grid', gap: 10 }}>
-                                            <button 
-                                                className="btn btn-secondary btn-sm" 
-                                                style={{ justifyContent: 'flex-start', textAlign: 'left', padding: 12 }}
-                                                onClick={() => applyQuickAITool('summarize')}
-                                            >
-                                                <ListFilter size={14} color="#7c5cf6" style={{ marginRight: 8 }} />
-                                                <div>
-                                                    <div style={{ fontSize: 13, fontWeight: 700 }}>Summarizer</div>
-                                                    <div style={{ fontSize: 10, opacity: 0.7 }}>Compact core ideas</div>
-                                                </div>
-                                            </button>
-                                            <button 
-                                                className="btn btn-secondary btn-sm" 
-                                                style={{ justifyContent: 'flex-start', textAlign: 'left', padding: 12 }}
-                                                onClick={() => applyQuickAITool('translate')}
-                                            >
-                                                <Languages size={14} color="#f59e0b" style={{ marginRight: 8 }} />
-                                                <div>
-                                                    <div style={{ fontSize: 13, fontWeight: 700 }}>Translator</div>
-                                                    <div style={{ fontSize: 10, opacity: 0.7 }}>Multi-language support</div>
-                                                </div>
-                                            </button>
-                                            <button 
-                                                className="btn btn-secondary btn-sm" 
-                                                style={{ justifyContent: 'flex-start', textAlign: 'left', padding: 12 }}
-                                                onClick={() => applyQuickAITool('grammar')}
-                                            >
-                                                <CheckCircle2 size={14} color="#10b981" style={{ marginRight: 8 }} />
-                                                <div>
-                                                    <div style={{ fontSize: 13, fontWeight: 700 }}>Grammar Fixer</div>
-                                                    <div style={{ fontSize: 10, opacity: 0.7 }}>Autofix spelling & syntax</div>
-                                                </div>
-                                            </button>
-                                            <button 
-                                                className="btn btn-secondary btn-sm" 
-                                                style={{ justifyContent: 'flex-start', textAlign: 'left', padding: 12 }}
-                                                onClick={() => applyQuickAITool('simplify')}
-                                            >
-                                                <Sparkles size={14} color="#4f8ef7" style={{ marginRight: 8 }} />
-                                                <div>
-                                                    <div style={{ fontSize: 13, fontWeight: 700 }}>Text Simplifier</div>
-                                                    <div style={{ fontSize: 10, opacity: 0.7 }}>Make it easy to read</div>
-                                                </div>
-                                            </button>
-                                        </div>
-                                    </div>
-
                                     {/* Export Controls */}
                                     <div className="card">
                                         <h3 style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: 16 }}>
-                                            💾 Export Formats
+                                             Export Formats
                                         </h3>
                                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
                                             {['pdf', 'docx', 'txt'].map(fmt => (

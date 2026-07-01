@@ -268,7 +268,7 @@ export default function CropPage() {
 
   return (
     <DashboardLayout>
-      <FeatureLock featureName="PDF Crop">
+      <FeatureLock featureName="PDF Crop & Trim">
         <div style={{ maxWidth: 1400, margin: '0 auto' }}>
                 <div className="page-header" style={{ marginBottom: 32 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
@@ -280,8 +280,8 @@ export default function CropPage() {
                             <Scissors size={24} color="white" />
                         </div>
                         <div>
-                            <h1 className="page-title" style={{ marginBottom: 4 }}>PDF Crop Tool</h1>
-                            <p className="page-subtitle">Upload PDF, select area, crop, and download</p>
+                            <h1 className="page-title" style={{ marginBottom: 4 }}>PDF Crop & Trim</h1>
+                            <p className="page-subtitle">Crop PDF pages visually, trim content precisely, and export clean PDF output.</p>
                         </div>
                     </div>
                 </div>
@@ -309,7 +309,7 @@ export default function CropPage() {
                                     {pdfFile ? pdfFile.name : 'Drop PDF here'}
                                 </div>
                                 <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                                    PDF up to 20MB
+                                    PDF documents up to 20MB. Drag, drop, and then draw a crop selection.
                                 </div>
                             </div>
                             <input ref={fileInputRef} type="file" accept=".pdf" onChange={handleFileChange} style={{ display: 'none' }} />

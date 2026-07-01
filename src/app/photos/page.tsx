@@ -7,7 +7,6 @@ import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { Upload, X, CheckCircle, RefreshCw, HardDrive, Palette, Download } from 'lucide-react'
 import { useRouter } from 'next/navigation'
-import { removeBackground } from '@imgly/background-removal'
 
 // Preset colors: transparent (none), white, popular passport BG colors, and extras
 const PRESET_COLORS = [
@@ -37,6 +36,8 @@ export default function PhotosPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
+  const [removeBgModule, setRemoveBgModule] = useState<null | { removeBackground: typeof import('@imgly/background-removal')['removeBackground'] }>(null)
+
   const [dragOver, setDragOver] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [processing, setProcessing] = useState(false)
@@ -49,6 +50,30 @@ export default function PhotosPage() {
   const [customColor, setCustomColor] = useState('#ffffff')
   const [error, setError] = useState('')
   const [fileName, setFileName] = useState('')
+
+  // Prefetch the background-removal library on page mount to speed up first use.
+  useEffect(() => {
+    let active = true
+
+    import('@imgly/background-removal')
+      .then((mod) => {
+        if (active) setRemoveBgModule({ removeBackground: mod.removeBackground })
+      })
+      .catch((err) => {
+        console.warn('Background removal preload failed:', err)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const getRemoveBackground = async () => {
+    if (removeBgModule) return removeBgModule.removeBackground
+    const mod = await import('@imgly/background-removal')
+    setRemoveBgModule({ removeBackground: mod.removeBackground })
+    return mod.removeBackground
+  }
 
   // When a new blob arrives, convert it to a base64 data URL (most reliable for <img> + canvas)
   useEffect(() => {
@@ -119,7 +144,8 @@ export default function PhotosPage() {
       // First run downloads model from CDN (~5-10s), then cached in browser
       if (statusText) statusText.innerText = 'Removing background (AI running in browser)...'
       
-      const blob = await removeBackground(file, {
+      const removeBackgroundFn = await getRemoveBackground()
+      const blob = await removeBackgroundFn(file, {
         device: 'cpu',
         output: { format: 'image/png', quality: 1 },
       })

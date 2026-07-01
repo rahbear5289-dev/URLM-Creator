@@ -95,8 +95,8 @@ export default function PVCCardPage() {
     <DashboardLayout>
       <FeatureLock featureName="PVC Card">
         <div className="page-header">
-        <h1 className="page-title">PVC Card Designer</h1>
-        <p className="page-subtitle">Precision formatting for identification cards, badges, and professional PVC printing. Adjust dimensions with real-time bleed previews.</p>
+        <h1 className="page-title">PVC Card Layout Builder</h1>
+        <p className="page-subtitle">Create print-ready PVC card sheets with exact dimensions, crop marks, and instant PDF export for professional ID cards and passes.</p>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '340px 1fr', gap: 20, alignItems: 'start' }}>
@@ -115,7 +115,7 @@ export default function PVCCardPage() {
               <div className="upload-icon" style={{ width: 44, height: 44, marginBottom: 12 }}>
                 <Upload size={20} />
               </div>
-              <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>Upload Image or PDF</div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>Upload card artwork or image</div>
               <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>PNG, JPG, or PDF up to 20MB</div>
             </div>
             <input id="pvc-file-input" ref={fileInputRef} type="file" accept="image/*,.pdf" onChange={handleFile} style={{ display: 'none' }} />
@@ -202,11 +202,11 @@ export default function PVCCardPage() {
 
           <button id="printer-preview-btn" className="btn btn-secondary btn-lg" style={{ width: '100%' }}>
             <Printer size={16} />
-            Printer-Friendly Preview
+            Preview Sheet Layout
           </button>
 
           <button id="generate-pvc-pdf-btn" className="btn btn-primary btn-lg" style={{ width: '100%' }} onClick={handleGeneratePDF} disabled={generating}>
-            {generating ? <><RotateCw size={16} className="animate-spin" /> Generating...</> : <><Download size={16} /> Generate PDF for PVC</>}
+            {generating ? <><RotateCw size={16} className="animate-spin" /> Generating...</> : <><Download size={16} /> Export PVC Layout PDF</>}
           </button>
         </div>
 

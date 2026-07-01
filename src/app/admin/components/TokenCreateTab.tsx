@@ -454,7 +454,7 @@
                             </div>
                             <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8, lineHeight: 1.5 }}>
                                 🔐 When user applies this token: <strong style={{ color: form.access_mode === 'lock' ? '#f87171' : '#34d399' }}>
-                                    {form.access_mode === 'lock' ? 'My Photos, Create Sheet, PVC Card, PDF Converter, PDF Crop, AI PDF Edit → Disabled ❌' : 'All features → Enabled ✅'}
+                                    {form.access_mode === 'lock' ? 'My Photos, Create Sheet, PVC Card, PDF Converter, PDF Crop → Disabled ❌' : 'All features → Enabled ✅'}
                                 </strong>
                             </p>
                         </div>
@@ -669,7 +669,7 @@
                             )
                         })}
                         <p style={{ fontSize: 10, color: 'var(--text-muted)', lineHeight: 1.6, marginTop: 12, marginBottom: 0 }}>
-                            Affected features: <strong style={{ color: 'var(--text-secondary)' }}>My Photos, Create Sheet, PVC Card, PDF Converter, PDF Crop, AI PDF Edit</strong>
+                            Affected features: <strong style={{ color: 'var(--text-secondary)' }}>My Photos, Create Sheet, PVC Card, PDF Converter, PDF Crop</strong>
                         </p>
                     </div>
 

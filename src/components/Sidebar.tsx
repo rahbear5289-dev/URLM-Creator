@@ -15,7 +15,6 @@ const navItems = [
   { href: '/pvc-card', label: 'PVC Card', icon: CreditCard, lockable: true },
   { href: '/pdf-converter', label: 'PDF Converter', icon: FileText, lockable: true },
   { href: '/crop', label: 'PDF Crop', icon: Scissors, lockable: true },
-  { href: '/ai-edit', label: 'AI PDF Edit', icon: Sparkles, lockable: true },
   { href: '/token/create', label: 'Token Enter', icon: Coins },
   { href: '/profile', label: 'Profile', icon: User },
 ]

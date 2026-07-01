@@ -48,7 +48,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .from('profiles')
         .select('plan, storage_used, storage_limit, storage_credit, feature_access_mode')
         .eq('id', userId)
-        .single()
+        .maybeSingle()
 
       if (error) throw error
 
@@ -86,7 +86,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }))
       }
     } catch (error) {
-      console.warn('Error fetching plan context:', error)
+      const errObj = error as { code?: string; message?: string }
+      if (errObj?.code === 'PGRST205') {
+        console.warn('Profiles table missing in Supabase schema cache. Defaulting to free plan.')
+      } else {
+        console.warn('Error fetching plan context:', error)
+      }
+
       const savedPlan = localStorage.getItem('userPlan')
       if (savedPlan) {
         const planData = JSON.parse(savedPlan)

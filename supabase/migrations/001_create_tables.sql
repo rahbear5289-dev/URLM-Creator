@@ -66,6 +66,43 @@ CREATE POLICY "Users can insert their own subscriptions" ON public.subscriptions
 CREATE POLICY "Users can update their own subscriptions" ON public.subscriptions
   FOR UPDATE USING (auth.uid() = user_id);
 
+-- Create profiles table if it does not exist
+CREATE TABLE IF NOT EXISTS public.profiles (
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  full_name TEXT,
+  avatar_url TEXT,
+  username TEXT,
+  bio TEXT,
+  email TEXT,
+  phone_number TEXT,
+  location TEXT,
+  dob TEXT,
+  website TEXT,
+  social_links JSONB DEFAULT '{}',
+  verified_badge BOOLEAN DEFAULT FALSE,
+  show_email BOOLEAN DEFAULT FALSE,
+  wallet_balance NUMERIC DEFAULT 0,
+  token_balance NUMERIC DEFAULT 0,
+  plan TEXT DEFAULT 'free',
+  feature_access_mode TEXT DEFAULT 'open',
+  storage_used BIGINT DEFAULT 0,
+  storage_limit BIGINT DEFAULT 2147483648,
+  storage_credit BIGINT DEFAULT 0,
+  is_pro BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can select their own profile" ON public.profiles
+  FOR SELECT USING (auth.uid() = id);
+
+CREATE POLICY "Users can update their own profile" ON public.profiles
+  FOR UPDATE USING (auth.uid() = id);
+
+CREATE POLICY "Users can insert their own profile" ON public.profiles
+  FOR INSERT WITH CHECK (auth.uid() = id);
+
 -- Add plan and storage columns to profiles table
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS storage_used BIGINT DEFAULT 0;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS storage_limit BIGINT DEFAULT 2147483648;

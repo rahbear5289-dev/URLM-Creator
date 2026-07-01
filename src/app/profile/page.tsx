@@ -22,22 +22,30 @@ export default function ProfilePage() {
   useEffect(() => {
     if (user) {
       fetchProfile()
+    } else {
+      setLoading(false)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user])
 
   const fetchProfile = async () => {
+    if (!user?.id) {
+      setLoading(false)
+      return
+    }
+
     try {
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
-        .eq('id', user?.id)
-        .single()
+        .eq('id', user.id)
+        .maybeSingle()
 
       if (error) throw error
       setProfile(data)
     } catch (err) {
-      console.error('Error fetching profile:', err)
+      const message = err instanceof Error ? err.message : JSON.stringify(err)
+      console.error('Error fetching profile:', message, err)
     } finally {
       setLoading(false)
     }

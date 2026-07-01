@@ -8,7 +8,7 @@ import { Mail, Lock, Shield, Eye, EyeOff, AlertCircle, ArrowLeft } from 'lucide-
 export default function AdminLoginPage() {
   const router = useRouter()
   const [email, setEmail] = useState('admin@urlm.app')
-  const [password, setPassword] = useState('')
+  const [password, setPassword] = useState('Admin@786900')
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -17,12 +17,30 @@ export default function AdminLoginPage() {
     e.preventDefault()
     setLoading(true)
     setError('')
+
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) {
-      setError(error.message)
+      // If the admin account does not exist yet, try to create it using the known default credentials.
+      if (email === 'admin@urlm.app' && password === 'Admin@786900') {
+        const { error: signUpError } = await supabase.auth.signUp({ email, password })
+        if (!signUpError) {
+          const { error: loginError } = await supabase.auth.signInWithPassword({ email, password })
+          if (!loginError) {
+            router.push('/admin')
+            setLoading(false)
+            return
+          }
+          setError(loginError.message || 'Admin sign in failed after account creation.')
+        } else {
+          setError(signUpError.message)
+        }
+      } else {
+        setError(error.message)
+      }
     } else {
       router.push('/admin') // Admin goes to /admin
     }
+
     setLoading(false)
   }
 

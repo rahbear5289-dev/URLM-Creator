@@ -118,10 +118,10 @@ export default function PDFConverterPage() {
         <div>
           <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent-blue)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
             <div style={{ width: 20, height: 2, background: 'var(--accent-blue)' }} />
-            Document Processing
+            Document Converter
           </div>
           <h1 className="page-title">PDF Conversion Studio</h1>
-          <p className="page-subtitle">Transform your images and documents into high-fidelity, print-ready PDF files with our optimized processing engine.</p>
+          <p className="page-subtitle">Convert images, documents, and spreadsheets into optimized PDF files with smart queue management and preview tools.</p>
         </div>
         <button id="recent-activity-btn" className="btn btn-secondary btn-sm">
           🕔 Recent Activity
@@ -143,7 +143,7 @@ export default function PDFConverterPage() {
             </div>
             <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8 }}>Drop files here</h3>
             <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 20, lineHeight: 1.5 }}>
-              Support for PNG, JPG, DOCX, and XLSX. Maximum file size 50MB.
+              Support for PNG, JPG, DOCX, XLSX, and PDF. Upload files, convert them quickly, then preview or download results instantly.
             </p>
             <button id="pdf-select-files-btn" className="btn btn-primary" onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click() }}>
               <Upload size={14} />
@@ -230,13 +230,19 @@ export default function PDFConverterPage() {
               </div>
             ))}
 
-            {queue.length > 1 && (
-              <div style={{ paddingTop: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Combine all {queue.length} files into a single PDF document?</span>
-                <button id="merge-convert-btn" className="btn btn-primary">
-                  <Merge size={14} />
-                  MERGE & CONVERT
-                </button>
+            {queue.length > 0 && (
+              <div style={{ paddingTop: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+                {queue.length > 1 ? (
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Convert selected files into PDF with one click.</span>
+                ) : (
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Convert individual items or merge multiple files into one PDF.</span>
+                )}
+                {queue.length > 1 && (
+                  <button id="merge-convert-btn" className="btn btn-primary">
+                    <Merge size={14} />
+                    Merge & Convert
+                  </button>
+                )}
               </div>
             )}
           </div>

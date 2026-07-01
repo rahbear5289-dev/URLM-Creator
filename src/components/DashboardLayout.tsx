@@ -12,7 +12,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const pathname = usePathname()
 
   const isLocked = featureAccessMode === 'lock'
-  const restrictedPaths = ['/photos', '/create-sheet', '/pvc-card', '/pdf-converter', '/crop', '/ai-edit']
+  const restrictedPaths = ['/photos', '/create-sheet', '/pvc-card', '/pdf-converter', '/crop']
 
   useEffect(() => {
     if (!loading && !user) {

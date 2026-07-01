@@ -16,7 +16,6 @@ const tools = [
   { title: 'PVC Card', desc: 'Format ID cards specifically for PVC plastic printers.', icon: CreditCard, href: '/pvc-card', color: '#4f8ef7' },
   { title: 'PDF Converter', desc: 'Convert any existing sheet layouts into print-ready PDFs.', icon: FileText, href: '/pdf-converter', color: '#22d3ee' },
   { title: 'PDF Crop', desc: 'Surgically crop and extract specific sections from PDF documents.', icon: Scissors, color: '#ec4899', href: '/crop' },
-  { title: 'AI PDF Edit', desc: 'Use artificial intelligence to rewrite, edit, and translate PDF text.', icon: Sparkles, color: '#8b5cf6', href: '/ai-edit' },
 ]
 
 interface Stats {
@@ -54,7 +53,7 @@ export default function DashboardPage() {
   const displayName = user?.user_metadata?.full_name?.split(' ')[0] ?? user?.email?.split('@')[0] ?? 'User'
 
   const handleToolClick = (href: string) => {
-    if (isLocked && ['/photos', '/create-sheet', '/pvc-card', '/pdf-converter', '/crop', '/ai-edit'].includes(href)) {
+    if (isLocked && ['/photos', '/create-sheet', '/pvc-card', '/pdf-converter', '/crop'].includes(href)) {
       router.push('/token/create')
       return
     }
