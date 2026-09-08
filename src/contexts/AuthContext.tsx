@@ -55,9 +55,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (data) {
         const rawUsed = data.storage_used || 0
         const credit = data.storage_credit || 0
-        const limit = data.storage_limit || 5368709120 // Default 5GB
+        const limit = data.storage_limit || 5368709120
 
-        // Used is Raw Usage (incremented by tools), Limit is base limit (5GB)
         const used = rawUsed
         const percent = Math.min(100, limit > 0 ? parseFloat(((used / limit) * 100).toFixed(2)) : 0)
         const isFull = used >= limit
@@ -65,7 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setIsStorageFull(isFull)
         setStorageUsage({ used, limit, percent, credit })
         
-        // Access logic: Lock if admin set mode to LOCK OR if storage is full
+        
         const dbMode = (data.feature_access_mode as 'lock' | 'open') || 'open'
         const finalMode = (dbMode === 'lock' || isFull) ? 'lock' : 'open'
         
@@ -76,7 +75,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setPlan(derivedPlan)
         setIsPro(isProUser)
 
-        // Save to localStorage for fallback
         localStorage.setItem('userPlan', JSON.stringify({
           isPro: isProUser,
           plan: derivedPlan,

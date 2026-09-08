@@ -5,9 +5,11 @@ import { useRouter, usePathname } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import Sidebar from '@/components/Sidebar'
 import Header from '@/components/Header'
+import { useSidebar } from '@/contexts/SidebarContext'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, loading, signOut, plan, isStorageFull, storageUsage, featureAccessMode } = useAuth()
+  const { isCollapsed } = useSidebar()
   const router = useRouter()
   const pathname = usePathname()
 
@@ -29,7 +31,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   if (loading) {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-primary)' }}>
-        <div className="animate-spin" style={{ width: 32, height: 32, border: '3px solid var(--border)', borderTopColor: 'var(--accent-purple)', borderRadius: '50%' }} />
+        <div className="animate-spin" style={{ width: 32, height: 32, border: '3px solid var(--border)', borderTopColor: 'var(--accent-lime)', borderRadius: '50%' }} />
       </div>
     )
   }
@@ -37,7 +39,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   if (!user) return null
 
   return (
-    <div className="app-layout">
+    <div className={`app-layout ${isCollapsed ? 'sidebar-collapsed' : ''}`}>
       <Sidebar />
       <div className="main-content">
         <Header />
