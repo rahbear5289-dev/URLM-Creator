@@ -3,9 +3,10 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import DashboardLayout from '@/components/DashboardLayout'
 import FeatureLock from '@/components/FeatureLock'
-import { Upload, Download, Scissors, ZoomIn, ZoomOut, ChevronLeft, ChevronRight, RotateCw, X } from 'lucide-react'
+import { Upload, Download, Scissors, ZoomIn, ZoomOut, ChevronLeft, ChevronRight, RotateCw, X, Image as ImageIcon, Grid2x2, CreditCard, FileText, Coins, Settings, User } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
+import { useRouter } from 'next/navigation'
 
 // Library holders (browser only)
 let pdfjsLibInstance: any = null
@@ -28,6 +29,7 @@ async function getPdfLibraries() {
 
 export default function CropPage() {
     const { user } = useAuth()
+    const router = useRouter()
     const [pdfFile, setPdfFile] = useState<File | null>(null)
     const [pdfDoc, setPdfDoc] = useState<any>(null)
     const [currentPage, setCurrentPage] = useState(1)
@@ -270,21 +272,45 @@ export default function CropPage() {
     <DashboardLayout>
       <FeatureLock featureName="PDF Crop & Trim">
         <div style={{ maxWidth: 1400, margin: '0 auto' }}>
-                <div className="page-header" style={{ marginBottom: 32 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-                        <div style={{
-                            width: 48, height: 48, borderRadius: 12,
-                            background: 'linear-gradient(135deg, #7c5cf6, #ec4899)',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center'
-                        }}>
-                            <Scissors size={24} color="white" />
-                        </div>
-                        <div>
-                            <h1 className="page-title" style={{ marginBottom: 4 }}>PDF Crop & Trim</h1>
-                            <p className="page-subtitle">Crop PDF pages visually, trim content precisely, and export clean PDF output.</p>
-                        </div>
-                    </div>
+
+          {/* Breadcrumb */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+              <span style={{ color: 'var(--text-muted)', cursor: 'pointer' }} onClick={() => router.push('/dashboard')}>Dashboard</span>
+              <span style={{ color: 'var(--text-muted)' }}>&gt;</span>
+              <span style={{ color: '#10b981', fontWeight: 600 }}>PDF Crop</span>
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => router.push('/settings')} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}><Settings size={14} /> Settings</button>
+              <button onClick={() => router.push('/profile')} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}><User size={14} /> Profile</button>
+            </div>
+          </div>
+
+          {/* Page Header */}
+          <div style={{ marginBottom: 28 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 8 }}>
+              <div style={{ width: 46, height: 46, borderRadius: 12, background: 'rgba(236,72,153,0.12)', color: '#ec4899', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <Scissors size={22} />
+              </div>
+              <div>
+                <h1 style={{ fontSize: 26, fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 4px 0', letterSpacing: '-0.4px' }}>PDF Crop &amp; Trim</h1>
+                <p style={{ fontSize: 13.5, color: 'var(--text-muted)', margin: 0 }}>Crop PDF pages visually, trim content precisely, and export clean PDF output.</p>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 24, padding: '12px 0', borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)', marginTop: 16 }}>
+              {[
+                { label: 'Mode', value: 'Visual Crop', color: '#ec4899' },
+                { label: 'Pages', value: pdfDoc ? `${totalPages}` : '—', color: '#3b82f6' },
+                { label: 'Current', value: pdfDoc ? `${currentPage}` : '—', color: '#10b981' },
+                { label: 'Zoom', value: `${zoom}%`, color: '#8b5cf6' },
+              ].map(s => (
+                <div key={s.label}>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 2 }}>{s.label}</div>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: s.color }}>{s.value}</div>
                 </div>
+              ))}
+            </div>
+          </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: pdfDoc ? '280px 1fr' : '1fr', gap: 20, alignItems: 'start' }}>
 
@@ -582,7 +608,7 @@ export default function CropPage() {
                         <div style={{ fontSize: 24, marginBottom: 12 }}>📤</div>
                         <h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>Upload PDF</h4>
                         <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: 0 }}>
-                            Drag & drop or browse to upload your PDF file
+                            Drag &amp; drop or browse to upload your PDF file
                         </p>
                     </div>
                     <div className="card">
@@ -600,7 +626,39 @@ export default function CropPage() {
                         </p>
                     </div>
                 </div>
+
+          {/* Creator Suite Quick Access */}
+          <div style={{ marginTop: 40, paddingTop: 28, borderTop: '1px solid var(--border)' }}>
+            <div style={{ marginBottom: 14 }}>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 2px 0' }}>Creator Suite</h3>
+              <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: 0 }}>Jump to another tool</p>
             </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
+              {[
+                { label: 'My Photos', href: '/photos', icon: ImageIcon, color: '#10b981', desc: 'AI background removal' },
+                { label: 'Create Sheet', href: '/create-sheet', icon: Grid2x2, color: '#3b82f6', desc: 'Passport photo sheets' },
+                { label: 'PVC Card', href: '/pvc-card', icon: CreditCard, color: '#8b5cf6', desc: 'Badge & ID cards' },
+                { label: 'PDF Converter', href: '/pdf-converter', icon: FileText, color: '#f59e0b', desc: 'Convert to PDF' },
+                { label: 'Token Enter', href: '/token/create', icon: Coins, color: '#06b6d4', desc: 'Claim vouchers' },
+              ].map(tool => {
+                const Icon = tool.icon
+                return (
+                  <div key={tool.label} onClick={() => router.push(tool.href)} className="card" style={{ padding: '14px 16px', borderRadius: 12, cursor: 'pointer' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                      <div style={{ width: 32, height: 32, borderRadius: 8, background: `${tool.color}18`, color: tool.color, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Icon size={16} />
+                      </div>
+                      <ChevronRight size={13} color="var(--text-muted)" />
+                    </div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>{tool.label}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{tool.desc}</div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+        </div>
       </FeatureLock>
     </DashboardLayout>
   )

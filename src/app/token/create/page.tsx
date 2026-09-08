@@ -4,10 +4,12 @@ import { useState } from 'react'
 import DashboardLayout from '@/components/DashboardLayout'
 import {
     Coins, CheckCircle, AlertCircle, Gift, Percent,
-    HardDrive, Tag, Loader2, Shield, Lock, Unlock, ChevronRight
+    HardDrive, Tag, Loader2, Shield, Lock, Unlock, ChevronRight,
+    Image as ImageIcon, Grid2x2, CreditCard, FileText, Scissors, Settings, User
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
+import { useRouter } from 'next/navigation'
 
 interface TokenRecord {
     id: string
@@ -43,7 +45,8 @@ const ERROR_MSGS: Record<string, string> = {
 }
 
 export default function TokenEnterPage() {
-    const { user, storageUsage, refreshPlan } = useAuth()
+    const { user, refreshPlan } = useAuth()
+    const router = useRouter()
 
     const [tokenInput,   setTokenInput]   = useState('')
     const [adminIdInput, setAdminIdInput] = useState('')
@@ -190,22 +193,42 @@ export default function TokenEnterPage() {
         <DashboardLayout>
             <div style={{ maxWidth: 720, margin: '0 auto' }}>
 
-                {/* ── Header ── */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 18, marginBottom: 40 }}>
-                    <div style={{
-                        width: 64, height: 64, borderRadius: 18,
-                        background: 'linear-gradient(135deg, #7c5cf6, #ec4899)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        boxShadow: '0 10px 28px rgba(124,92,246,0.3)',
-                        flexShrink: 0
-                    }}>
-                        <Coins size={32} color="white" />
+                {/* Breadcrumb */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+                        <span style={{ color: 'var(--text-muted)', cursor: 'pointer' }} onClick={() => router.push('/dashboard')}>Dashboard</span>
+                        <span style={{ color: 'var(--text-muted)' }}>&gt;</span>
+                        <span style={{ color: '#10b981', fontWeight: 600 }}>Token Enter</span>
                     </div>
-                    <div>
-                        <h1 style={{ fontSize: 28, fontWeight: 900, margin: 0 }}>Apply Promo Token</h1>
-                        <p style={{ color: 'var(--text-secondary)', margin: '4px 0 0' }}>
-                            Enter your token code to unlock rewards and storage upgrades
-                        </p>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                        <button onClick={() => router.push('/settings')} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}><Settings size={14} /> Settings</button>
+                        <button onClick={() => router.push('/profile')} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}><User size={14} /> Profile</button>
+                    </div>
+                </div>
+
+                {/* Page Header */}
+                <div style={{ marginBottom: 28 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 8 }}>
+                        <div style={{ width: 46, height: 46, borderRadius: 12, background: 'rgba(6,182,212,0.12)', color: '#06b6d4', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <Coins size={22} />
+                        </div>
+                        <div>
+                            <h1 style={{ fontSize: 26, fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 4px 0', letterSpacing: '-0.4px' }}>Apply Promo Token</h1>
+                            <p style={{ fontSize: 13.5, color: 'var(--text-muted)', margin: 0 }}>Enter your token code to unlock rewards, storage upgrades, and feature access.</p>
+                        </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 24, padding: '12px 0', borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)', marginTop: 16 }}>
+                        {[
+                            { label: 'Status', value: step === 'done' ? 'Claimed ✓' : step === 'ready' ? 'Verified' : 'Pending', color: step === 'done' ? '#10b981' : step === 'ready' ? '#3b82f6' : '#6b7280' },
+                            { label: 'Token Type', value: token ? token.token_type : '—', color: '#8b5cf6' },
+                            { label: 'Reward', value: token ? `${token.value}` : '—', color: '#f59e0b' },
+                            { label: 'Security', value: 'Double Lock', color: '#06b6d4' },
+                        ].map(s => (
+                            <div key={s.label}>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 2 }}>{s.label}</div>
+                                <div style={{ fontSize: 15, fontWeight: 800, color: s.color }}>{s.value}</div>
+                            </div>
+                        ))}
                     </div>
                 </div>
 
@@ -433,6 +456,37 @@ export default function TokenEnterPage() {
                         })}
                     </div>
                 )}
+            </div>
+
+            {/* Creator Suite Quick Access */}
+            <div style={{ maxWidth: 720, margin: '32px auto 0', paddingTop: 28, borderTop: '1px solid var(--border)' }}>
+                <div style={{ marginBottom: 14 }}>
+                    <h3 style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 2px 0' }}>Creator Suite</h3>
+                    <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: 0 }}>Jump to another tool</p>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
+                    {[
+                        { label: 'My Photos', href: '/photos', icon: ImageIcon, color: '#10b981', desc: 'AI background removal' },
+                        { label: 'Create Sheet', href: '/create-sheet', icon: Grid2x2, color: '#3b82f6', desc: 'Passport photo sheets' },
+                        { label: 'PVC Card', href: '/pvc-card', icon: CreditCard, color: '#8b5cf6', desc: 'Badge & ID cards' },
+                        { label: 'PDF Converter', href: '/pdf-converter', icon: FileText, color: '#f59e0b', desc: 'Convert to PDF' },
+                        { label: 'PDF Crop', href: '/crop', icon: Scissors, color: '#ec4899', desc: 'Crop PDF pages' },
+                    ].map(tool => {
+                        const Icon = tool.icon
+                        return (
+                            <div key={tool.label} onClick={() => router.push(tool.href)} className="card" style={{ padding: '14px 16px', borderRadius: 12, cursor: 'pointer' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                                    <div style={{ width: 32, height: 32, borderRadius: 8, background: `${tool.color}18`, color: tool.color, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                        <Icon size={16} />
+                                    </div>
+                                    <ChevronRight size={13} color="var(--text-muted)" />
+                                </div>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>{tool.label}</div>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{tool.desc}</div>
+                            </div>
+                        )
+                    })}
+                </div>
             </div>
 
             <style jsx>{`

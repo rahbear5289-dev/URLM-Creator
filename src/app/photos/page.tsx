@@ -5,7 +5,7 @@ import DashboardLayout from '@/components/DashboardLayout'
 import FeatureLock from '@/components/FeatureLock'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
-import { Upload, X, CheckCircle, RefreshCw, HardDrive, Palette, Download } from 'lucide-react'
+import { Upload, X, CheckCircle, RefreshCw, HardDrive, Palette, Download, ChevronRight, Image as ImageIcon, Grid2x2, CreditCard, FileText, Scissors, Coins, Settings, User } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
 // Preset colors: transparent (none), white, popular passport BG colors, and extras
@@ -235,9 +235,48 @@ export default function PhotosPage() {
         {/* Hidden canvas for compositing */}
       <canvas ref={canvasRef} style={{ display: 'none' }} />
 
-      <div className="page-header">
-        <h1 className="page-title">Photo Library</h1>
-        <p className="page-subtitle">Upload photos, remove backgrounds with AI, then apply any background color instantly.</p>
+      {/* ─── Breadcrumb ─── */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+          <span style={{ color: 'var(--text-muted)', cursor: 'pointer' }} onClick={() => router.push('/dashboard')}>Dashboard</span>
+          <span style={{ color: 'var(--text-muted)' }}>&gt;</span>
+          <span style={{ color: '#10b981', fontWeight: 600 }}>My Photos</span>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={() => router.push('/settings')} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <Settings size={14} /> Settings
+          </button>
+          <button onClick={() => router.push('/profile')} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <User size={14} /> Profile
+          </button>
+        </div>
+      </div>
+
+      {/* ─── Page Header (Settings/Profile style) ─── */}
+      <div style={{ marginBottom: 28 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 8 }}>
+          <div style={{ width: 46, height: 46, borderRadius: 12, background: 'rgba(16,185,129,0.12)', color: '#10b981', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <ImageIcon size={22} />
+          </div>
+          <div>
+            <h1 style={{ fontSize: 26, fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 4px 0', letterSpacing: '-0.4px' }}>My Photos</h1>
+            <p style={{ fontSize: 13.5, color: 'var(--text-muted)', margin: 0 }}>Upload photos, remove backgrounds with AI, then apply any background color instantly.</p>
+          </div>
+        </div>
+        {/* Quick stats row */}
+        <div style={{ display: 'flex', gap: 24, padding: '12px 0', borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)', marginTop: 16 }}>
+          {[
+            { label: 'Storage Used', value: `${storageUsage.percent}%`, color: '#10b981' },
+            { label: 'AI Removals', value: 'Unlimited', color: '#3b82f6' },
+            { label: 'Export Formats', value: 'PNG / JPG', color: '#8b5cf6' },
+            { label: 'Max File Size', value: '10 MB', color: '#f59e0b' },
+          ].map(s => (
+            <div key={s.label}>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 2 }}>{s.label}</div>
+              <div style={{ fontSize: 15, fontWeight: 800, color: s.color }}>{s.value}</div>
+            </div>
+          ))}
+        </div>
       </div>
 
       {error && (
@@ -491,6 +530,37 @@ export default function PhotosPage() {
               <img src={originalImage} alt="Original" style={{ width: '100%', display: 'block', maxHeight: 500, objectFit: 'contain' }} />
             </div>
           )}
+        </div>
+      </div>
+
+      {/* ─── Creator Suite Quick Access ─── */}
+      <div style={{ marginTop: 40, paddingTop: 28, borderTop: '1px solid var(--border)' }}>
+        <div style={{ marginBottom: 14 }}>
+          <h3 style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 2px 0' }}>Creator Suite</h3>
+          <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: 0 }}>Jump to another tool</p>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
+          {[
+            { label: 'Create Sheet', href: '/create-sheet', icon: Grid2x2, color: '#3b82f6', desc: 'Passport photo sheets' },
+            { label: 'PVC Card', href: '/pvc-card', icon: CreditCard, color: '#8b5cf6', desc: 'Badge & ID cards' },
+            { label: 'PDF Converter', href: '/pdf-converter', icon: FileText, color: '#f59e0b', desc: 'Convert to PDF' },
+            { label: 'PDF Crop', href: '/crop', icon: Scissors, color: '#ec4899', desc: 'Crop PDF pages' },
+            { label: 'Token Enter', href: '/token/create', icon: Coins, color: '#06b6d4', desc: 'Claim vouchers' },
+          ].map(tool => {
+            const Icon = tool.icon
+            return (
+              <div key={tool.label} onClick={() => router.push(tool.href)} className="card" style={{ padding: '14px 16px', borderRadius: 12, cursor: 'pointer', transition: 'all 0.15s ease' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <div style={{ width: 32, height: 32, borderRadius: 8, background: `${tool.color}18`, color: tool.color, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Icon size={16} />
+                  </div>
+                  <ChevronRight size={13} color="var(--text-muted)" />
+                </div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>{tool.label}</div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{tool.desc}</div>
+              </div>
+            )
+          })}
         </div>
       </div>
       </FeatureLock>
