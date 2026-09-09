@@ -1814,25 +1814,77 @@ textarea.form-input {
   z-index: 1;
 }
 
-/* Floating Top Navigation Pill */
+/* Floating Top Navigation Pill — Glassmorphism, fixed on scroll */
 .hero-navbar-wrap {
   width: 100%;
   display: flex;
   justify-content: center;
   padding: 28px 20px 0;
-  position: relative;
-  z-index: 50;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 90;
+  transition: padding 0.35s ease;
+}
+
+/* Shrinks once the page is scrolled so it sits tight at the top */
+.hero-navbar-wrap.is-scrolled {
+  padding: 12px 20px 0;
 }
 
 .hero-navbar {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 36px;
-  background: #ffffff;
-  border: 1px solid #e5e7eb;
+  background: rgba(255, 255, 255, 0.62);
+  backdrop-filter: blur(16px) saturate(170%);
+  -webkit-backdrop-filter: blur(16px) saturate(170%);
+  border: 1px solid rgba(255, 255, 255, 0.65);
   border-radius: 9999px;
   padding: 8px 12px 8px 24px;
-  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  overflow: hidden;
+  transition: background 0.35s ease, border-color 0.35s ease, box-shadow 0.35s ease;
+  /* Entry: glass pill materializes AFTER the brand letters have dropped in */
+  animation: navbarGlassIn 0.65s ease 0.75s backwards;
+}
+
+.hero-navbar.is-scrolled {
+  background: rgba(255, 255, 255, 0.82);
+  border-color: rgba(255, 255, 255, 0.8);
+  box-shadow: 0 12px 32px -10px rgba(17, 24, 39, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.75);
+}
+
+/* Glass animation: a light streak sweeps across the pill */
+.hero-navbar::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(105deg, transparent 42%, rgba(255, 255, 255, 0.6) 50%, transparent 58%);
+  transform: translateX(-130%);
+  animation: glassSheen 4.5s ease-in-out 1.8s infinite;
+  pointer-events: none;
+}
+
+@keyframes glassSheen {
+  0% { transform: translateX(-130%); }
+  60%, 100% { transform: translateX(130%); }
+}
+
+@keyframes navbarGlassIn {
+  0% {
+    background: rgba(255, 255, 255, 0);
+    border-color: rgba(255, 255, 255, 0);
+    box-shadow: 0 0 0 0 rgba(0, 0, 0, 0), inset 0 1px 0 rgba(255, 255, 255, 0);
+  }
+  100% {
+    background: rgba(255, 255, 255, 0.62);
+    border-color: rgba(255, 255, 255, 0.65);
+    box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  }
 }
 
 .hero-brand {
@@ -1852,6 +1904,35 @@ textarea.form-input {
   display: flex;
   align-items: center;
   justify-content: center;
+  animation: brandLetterDrop 0.55s cubic-bezier(0.22, 1.2, 0.36, 1) 0.05s backwards;
+}
+
+.hero-brand-name {
+  display: inline-flex;
+  white-space: nowrap;
+}
+
+.brand-letter {
+  display: inline-block;
+  animation: brandLetterDrop 0.55s cubic-bezier(0.22, 1.2, 0.36, 1) backwards;
+}
+
+/* Letters slide in from the top, one by one */
+@keyframes brandLetterDrop {
+  0% {
+    opacity: 0;
+    transform: translateY(-26px) scale(0.7);
+    filter: blur(4px);
+  }
+  60% {
+    opacity: 1;
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
 }
 
 .hero-nav-links {
@@ -1861,6 +1942,29 @@ textarea.form-input {
   list-style: none;
   margin: 0;
   padding: 0;
+}
+
+/* Nav links fade in last, staggered after the brand name */
+.hero-nav-links li {
+  animation: navItemFade 0.5s ease backwards;
+}
+
+.hero-nav-links li:nth-child(1) { animation-delay: 0.9s; }
+.hero-nav-links li:nth-child(2) { animation-delay: 0.97s; }
+.hero-nav-links li:nth-child(3) { animation-delay: 1.04s; }
+.hero-nav-links li:nth-child(4) { animation-delay: 1.11s; }
+.hero-nav-links li:nth-child(5) { animation-delay: 1.18s; }
+.hero-nav-links li:nth-child(6) { animation-delay: 1.25s; }
+
+@keyframes navItemFade {
+  0% {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .hero-nav-links a {
@@ -1891,6 +1995,7 @@ textarea.form-input {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  animation: navItemFade 0.5s ease 1.4s backwards;
 }
 
 .hero-login-btn:hover {

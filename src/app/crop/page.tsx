@@ -3,7 +3,12 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import DashboardLayout from '@/components/DashboardLayout'
 import FeatureLock from '@/components/FeatureLock'
-import { Upload, Download, Scissors, ZoomIn, ZoomOut, ChevronLeft, ChevronRight, RotateCw, X, Image as ImageIcon, Grid2x2, CreditCard, FileText, Coins, Settings, User } from 'lucide-react'
+import {
+  Upload, Download, Scissors, ZoomIn, ZoomOut, ChevronLeft,
+  ChevronRight, RotateCw, X, Image as ImageIcon, Grid2x2,
+  CreditCard, FileText, Coins, Settings, User, CheckCircle,
+  Sliders, Layers, Check, ExternalLink
+} from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
@@ -13,645 +18,706 @@ let pdfjsLibInstance: any = null
 let pdfLibInstance: any = null
 
 async function getPdfLibraries() {
-    if (typeof window === 'undefined') return { pdfjs: null, pdflib: null }
-    if (!pdfjsLibInstance) {
-        // Switch to legacy build which is more stable in Turbopack/Next.js environments
-        const module = await import('pdfjs-dist/legacy/build/pdf.mjs')
-        pdfjsLibInstance = module
-        pdfjsLibInstance.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${module.version}/legacy/build/pdf.worker.min.mjs`
-    }
-    if (!pdfLibInstance) {
-        const module = await import('pdf-lib')
-        pdfLibInstance = module.PDFDocument
-    }
-    return { pdfjs: pdfjsLibInstance, pdflib: pdfLibInstance }
+  if (typeof window === 'undefined') return { pdfjs: null, pdflib: null }
+  if (!pdfjsLibInstance) {
+    const module = await import('pdfjs-dist/legacy/build/pdf.mjs')
+    pdfjsLibInstance = module
+    pdfjsLibInstance.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${module.version}/legacy/build/pdf.worker.min.mjs`
+  }
+  if (!pdfLibInstance) {
+    const module = await import('pdf-lib')
+    pdfLibInstance = module.PDFDocument
+  }
+  return { pdfjs: pdfjsLibInstance, pdflib: pdfLibInstance }
 }
 
+type CropTab = 'Visual Crop' | 'Trim & Margins' | 'Page Manager' | 'Export Options'
+
 export default function CropPage() {
-    const { user } = useAuth()
-    const router = useRouter()
-    const [pdfFile, setPdfFile] = useState<File | null>(null)
-    const [pdfDoc, setPdfDoc] = useState<any>(null)
-    const [currentPage, setCurrentPage] = useState(1)
-    const [totalPages, setTotalPages] = useState(0)
-    const [zoom, setZoom] = useState(100)
-    const [cropMode, setCropMode] = useState(false)
-    const [cropArea, setCropArea] = useState<{ x: number; y: number; width: number; height: number } | null>(null)
-    const [isDragging, setIsDragging] = useState(false)
-    const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null)
-    const [loading, setLoading] = useState(false)
-    const [renderedPage, setRenderedPage] = useState<string | null>(null)
-    const [pageSize, setPageSize] = useState({ width: 0, height: 0 })
+  const { user } = useAuth()
+  const router = useRouter()
 
-    const canvasRef = useRef<HTMLCanvasElement>(null)
-    const containerRef = useRef<HTMLDivElement>(null)
-    const fileInputRef = useRef<HTMLInputElement>(null)
-    const renderTaskRef = useRef<any>(null)
+  const [activeTab, setActiveTab] = useState<CropTab>('Visual Crop')
+  const [pdfFile, setPdfFile] = useState<File | null>(null)
+  const [pdfDoc, setPdfDoc] = useState<any>(null)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(0)
+  const [zoom, setZoom] = useState(100)
+  const [cropMode, setCropMode] = useState(false)
+  const [cropArea, setCropArea] = useState<{ x: number; y: number; width: number; height: number } | null>(null)
+  const [isDragging, setIsDragging] = useState(false)
+  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [renderedPage, setRenderedPage] = useState<string | null>(null)
+  const [pageSize, setPageSize] = useState({ width: 0, height: 0 })
+  const [applyToPages, setApplyToPages] = useState<'current' | 'all' | 'odd' | 'even'>('current')
 
-    // Load PDF and render page
-    const loadPdf = async (file: File) => {
-        setLoading(true)
-        try {
-            const { pdfjs } = await getPdfLibraries()
-            if (!pdfjs) throw new Error('PDF.js library not loaded')
+  // Numerical Margins
+  const [marginTop, setMarginTop] = useState(10)
+  const [marginRight, setMarginRight] = useState(10)
+  const [marginBottom, setMarginBottom] = useState(10)
+  const [marginLeft, setMarginLeft] = useState(10)
 
-            const arrayBuffer = await file.arrayBuffer()
-            const loadingTask = pdfjs.getDocument({ data: arrayBuffer })
-            
-            // Handle password prompt if needed
-            loadingTask.onPassword = (callback: any) => {
-                const password = prompt('This PDF is password protected. Enter password:')
-                if (password !== null) {
-                    callback(password)
-                } else {
-                    throw new Error('No password given')
-                }
-            }
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const renderTaskRef = useRef<any>(null)
 
-            const pdf = await loadingTask.promise
-            setPdfDoc(pdf)
-            setTotalPages(pdf.numPages)
-            setCurrentPage(1)
-            setCropArea(null)
-            
-            // Re-render will be triggered by pdfDoc state update
-        } catch (err: any) {
-            console.error('Error loading PDF:', err)
-            if (err.name === 'PasswordException') {
-                alert('This PDF is password protected and no correct password was given.')
-            } else {
-                alert('Failed to load PDF. Please try another file.')
-            }
+  // Load PDF and render page
+  const loadPdf = async (file: File) => {
+    setLoading(true)
+    try {
+      const { pdfjs } = await getPdfLibraries()
+      if (!pdfjs) throw new Error('PDF.js library not loaded')
+
+      const arrayBuffer = await file.arrayBuffer()
+      const loadingTask = pdfjs.getDocument({ data: arrayBuffer })
+
+      loadingTask.onPassword = (callback: any) => {
+        const password = prompt('This PDF is password protected. Enter password:')
+        if (password !== null) {
+          callback(password)
+        } else {
+          throw new Error('No password given')
         }
-        setLoading(false)
+      }
+
+      const pdf = await loadingTask.promise
+      setPdfDoc(pdf)
+      setTotalPages(pdf.numPages)
+      setCurrentPage(1)
+      setCropArea(null)
+    } catch (err: any) {
+      console.error('Error loading PDF:', err)
+      if (err.name === 'PasswordException') {
+        alert('This PDF is password protected and no correct password was given.')
+      } else {
+        alert('Failed to load PDF. Please try another file.')
+      }
+    }
+    setLoading(false)
+  }
+
+  // Render current page
+  const renderPage = useCallback(async () => {
+    if (!pdfDoc) return
+
+    try {
+      if (renderTaskRef.current) {
+        renderTaskRef.current.cancel()
+        renderTaskRef.current = null
+      }
+
+      const page = await pdfDoc.getPage(currentPage)
+      const scale = (zoom / 100) * 1.5
+      const viewport = page.getViewport({ scale })
+
+      const canvas = canvasRef.current
+      if (!canvas) return
+
+      const context = canvas.getContext('2d')
+      if (!context) return
+
+      canvas.width = viewport.width
+      canvas.height = viewport.height
+      setPageSize({ width: viewport.width, height: viewport.height })
+
+      const renderContext = {
+        canvasContext: context,
+        viewport: viewport
+      }
+
+      renderTaskRef.current = page.render(renderContext)
+      await renderTaskRef.current.promise
+      renderTaskRef.current = null
+
+      setRenderedPage(canvas.toDataURL('image/png'))
+    } catch (err: any) {
+      if (err.name !== 'RenderingCancelledException') {
+        console.error('Error rendering page:', err)
+      }
+    }
+  }, [pdfDoc, currentPage, zoom])
+
+  useEffect(() => {
+    if (pdfDoc) {
+      renderPage()
+    }
+  }, [pdfDoc, currentPage, zoom, renderPage])
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file && file.type === 'application/pdf') {
+      setPdfFile(file)
+      loadPdf(file)
+    }
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    const file = e.dataTransfer.files?.[0]
+    if (file && file.type === 'application/pdf') {
+      setPdfFile(file)
+      loadPdf(file)
+    }
+  }
+
+  // Mouse handlers for drawing crop box
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (!cropMode || !containerRef.current) return
+    const rect = containerRef.current.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    const y = e.clientY - rect.top
+
+    setIsDragging(true)
+    setDragStart({ x, y })
+    setCropArea({ x, y, width: 0, height: 0 })
+  }
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging || !dragStart || !containerRef.current) return
+    const rect = containerRef.current.getBoundingClientRect()
+    const currentX = Math.max(0, Math.min(e.clientX - rect.left, pageSize.width))
+    const currentY = Math.max(0, Math.min(e.clientY - rect.top, pageSize.height))
+
+    const x = Math.min(dragStart.x, currentX)
+    const y = Math.min(dragStart.y, currentY)
+    const width = Math.abs(currentX - dragStart.x)
+    const height = Math.abs(currentY - dragStart.y)
+
+    setCropArea({ x, y, width, height })
+  }
+
+  const handleMouseUp = () => {
+    setIsDragging(false)
+  }
+
+  // Apply crop and export PDF
+  const handleCropAndExport = async () => {
+    if (!pdfFile || !cropArea) {
+      alert('Please select a crop area first.')
+      return
     }
 
-    // Render current page
-    const renderPage = useCallback(async () => {
-        if (!pdfDoc) return
+    setLoading(true)
+    try {
+      const { pdflib } = await getPdfLibraries()
+      if (!pdflib) throw new Error('PDF-lib not loaded')
 
-        try {
-            // Cancel previous render task if any
-            if (renderTaskRef.current) {
-                renderTaskRef.current.cancel()
-                renderTaskRef.current = null
-            }
+      const arrayBuffer = await pdfFile.arrayBuffer()
+      const pdf = await pdflib.load(arrayBuffer)
 
-            const page = await pdfDoc.getPage(currentPage)
-            const scale = zoom / 100
-            const viewport = page.getViewport({ scale })
+      const pages = pdf.getPages()
+      const targetPage = pages[currentPage - 1]
+      const { width: originalWidth, height: originalHeight } = targetPage.getSize()
 
-            const canvas = canvasRef.current
-            if (!canvas) return
+      const scaleX = originalWidth / pageSize.width
+      const scaleY = originalHeight / pageSize.height
 
-            canvas.width = viewport.width
-            canvas.height = viewport.height
-            setPageSize({ width: viewport.width, height: viewport.height })
+      const cropX = cropArea.x * scaleX
+      const cropY = (pageSize.height - (cropArea.y + cropArea.height)) * scaleY
+      const cropWidth = cropArea.width * scaleX
+      const cropHeight = cropArea.height * scaleY
 
-            const ctx = canvas.getContext('2d')
-            if (!ctx) return
+      targetPage.setCropBox(cropX, cropY, cropWidth, cropHeight)
 
-            const renderTask = page.render({
-                canvasContext: ctx,
-                viewport,
-                canvas: canvas
-            })
+      const croppedPdfBytes = await pdf.save()
+      const blob = new Blob([croppedPdfBytes], { type: 'application/pdf' })
+      const url = URL.createObjectURL(blob)
 
-            renderTaskRef.current = renderTask
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `cropped_${pdfFile.name}`
 
-            try {
-                await renderTask.promise
-                setRenderedPage('rendered')
-            } catch (err: any) {
-                if (err.name !== 'RenderingCancelledException') {
-                    console.error('Error rendering page:', err)
-                }
-            } finally {
-                if (renderTaskRef.current === renderTask) {
-                    renderTaskRef.current = null
-                }
-            }
-        } catch (err) {
-            console.error('Error getting page for render:', err)
-        }
-    }, [pdfDoc, currentPage, zoom])
-
-    useEffect(() => {
-        if (pdfDoc) {
-            renderPage()
-        }
-    }, [pdfDoc, renderPage])
-
-    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0]
-        if (file && file.type === 'application/pdf') {
-            setPdfFile(file)
-            await loadPdf(file)
-        }
-    }
-
-    const handleDrop = async (e: React.DragEvent) => {
-        e.preventDefault()
-        const file = e.dataTransfer.files[0]
-        if (file && file.type === 'application/pdf') {
-            setPdfFile(file)
-            await loadPdf(file)
-        }
-    }
-
-    const getCanvasCoords = (e: React.MouseEvent): { x: number; y: number } => {
-        const canvas = canvasRef.current
-        if (!canvas) return { x: 0, y: 0 }
-
-        const rect = canvas.getBoundingClientRect()
-        const scaleX = canvas.width / rect.width
-        const scaleY = canvas.height / rect.height
-
-        return {
-            x: (e.clientX - rect.left) * scaleX,
-            y: (e.clientY - rect.top) * scaleY
-        }
-    }
-
-    const handleMouseDown = (e: React.MouseEvent) => {
-        if (!cropMode || !canvasRef.current) return
-        const coords = getCanvasCoords(e)
-        setIsDragging(true)
-        setDragStart(coords)
-        setCropArea({ x: coords.x, y: coords.y, width: 0, height: 0 })
-    }
-
-    const handleMouseMove = (e: React.MouseEvent) => {
-        if (!isDragging || !dragStart || !canvasRef.current) return
-        const coords = getCanvasCoords(e)
-
-        setCropArea({
-            x: Math.min(dragStart.x, coords.x),
-            y: Math.min(dragStart.y, coords.y),
-            width: Math.abs(coords.x - dragStart.x),
-            height: Math.abs(coords.y - dragStart.y)
+      if (user) {
+        await supabase.from('activity_logs').insert({
+          user_id: user.id,
+          action: 'pdf_cropped',
+          description: `Cropped PDF page ${currentPage}`,
+          file_name: a.download
         })
+      }
+
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error('Error cropping PDF:', err)
+      alert('Failed to crop PDF. Please try again.')
     }
+    setLoading(false)
+  }
 
-    const handleMouseUp = () => {
-        setIsDragging(false)
-        setDragStart(null)
-    }
+  const tabs: CropTab[] = ['Visual Crop', 'Trim & Margins', 'Page Manager', 'Export Options']
 
-    const resetCrop = () => {
-        setCropArea(null)
-    }
-
-    const downloadCroppedPdf = async () => {
-        if (!pdfFile || !cropArea || cropArea.width === 0 || cropArea.height === 0) {
-            alert('Please select a crop area first.')
-            return
-        }
-
-        setLoading(true)
-        try {
-            const { pdflib } = await getPdfLibraries()
-            if (!pdflib) throw new Error('pdf-lib not loaded')
-
-            const arrayBuffer = await pdfFile.arrayBuffer()
-            const doc = await pdflib.load(arrayBuffer)
-            const pages = doc.getPages()
-            const page = pages[currentPage - 1]
-
-            const { width, height } = page.getSize()
-            const scaleX = width / pageSize.width
-            const scaleY = height / pageSize.height
-
-            // Calculate crop box in PDF coordinates (bottom-left origin)
-            const cropX = cropArea.x * scaleX
-            const cropY = height - (cropArea.y + cropArea.height) * scaleY
-            const cropW = cropArea.width * scaleX
-            const cropH = cropArea.height * scaleY
-
-            // Set the crop box
-            page.setMediaBox(cropX, cropY, cropW, cropH)
-
-            // Save and download
-            const pdfBytes = await doc.save()
-            const blob = new Blob([pdfBytes.buffer], { type: 'application/pdf' })
-            const url = URL.createObjectURL(blob)
-
-            const a = document.createElement('a')
-            a.href = url
-            a.download = `cropped_page_${currentPage}.pdf`
-            
-            // Log activity
-            if (user) {
-              await supabase.from('activity_logs').insert({
-                user_id: user.id,
-                action: 'pdf_cropped',
-                description: `Cropped PDF page ${currentPage}`,
-                file_name: pdfFile.name
-              })
-
-              // Update storage usage (add 3MB simulation)
-              const { data: profile } = await supabase.from('profiles').select('storage_used').eq('id', user.id).single()
-              if (profile) {
-                await supabase.from('profiles').update({
-                  storage_used: (profile.storage_used || 0) + (3 * 1024 * 1024)
-                }).eq('id', user.id)
-              }
-            }
-
-            a.click()
-
-            URL.revokeObjectURL(url)
-        } catch (err) {
-            console.error('Error cropping PDF:', err)
-            alert('Failed to crop PDF. Please try again.')
-        }
-        setLoading(false)
-    }
+  const creatorTools = [
+    { label: 'My Photos', href: '/photos', icon: ImageIcon, color: '#10b981', desc: 'Background removal & editor' },
+    { label: 'Create Sheet', href: '/create-sheet', icon: Grid2x2, color: '#3b82f6', desc: 'Passport & stamp photo sheets' },
+    { label: 'PVC Card', href: '/pvc-card', icon: CreditCard, color: '#8b5cf6', desc: 'Custom badge & ID PVC cards' },
+    { label: 'PDF Converter', href: '/pdf-converter', icon: FileText, color: '#f59e0b', desc: 'Convert image & doc to PDF' },
+    { label: 'PDF Crop', href: '/crop', icon: Scissors, color: '#ec4899', desc: 'Multi-page cropping tool', current: true },
+    { label: 'Token Enter', href: '/token/create', icon: Coins, color: '#06b6d4', desc: 'Claim vouchers & credits' },
+  ]
 
   return (
     <DashboardLayout>
       <FeatureLock featureName="PDF Crop & Trim">
-        <div style={{ maxWidth: 1400, margin: '0 auto' }}>
+        <div style={{ maxWidth: 1120, paddingBottom: 60 }}>
 
-          {/* Breadcrumb */}
+          {/* ─── Breadcrumb & Top Action Row ─── */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13.5 }}>
               <span style={{ color: 'var(--text-muted)', cursor: 'pointer' }} onClick={() => router.push('/dashboard')}>Dashboard</span>
               <span style={{ color: 'var(--text-muted)' }}>&gt;</span>
-              <span style={{ color: '#10b981', fontWeight: 600 }}>PDF Crop</span>
+              <span style={{ color: '#10b981', fontWeight: 600 }}>PDF Crop & Trim</span>
             </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={() => router.push('/settings')} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}><Settings size={14} /> Settings</button>
-              <button onClick={() => router.push('/profile')} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}><User size={14} /> Profile</button>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              {pdfDoc && (
+                <button
+                  onClick={handleCropAndExport}
+                  disabled={loading || !cropArea}
+                  style={{
+                    background: '#10b981', color: '#ffffff', border: 'none', borderRadius: 8,
+                    padding: '8px 18px', fontSize: 13.5, fontWeight: 600, cursor: 'pointer',
+                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                    boxShadow: '0 2px 8px rgba(16, 185, 129, 0.25)', opacity: (loading || !cropArea) ? 0.6 : 1
+                  }}
+                >
+                  <Download size={15} /> {loading ? 'Cropping...' : 'Crop & Download PDF'}
+                </button>
+              )}
+
+              <button
+                onClick={() => router.push('/settings')}
+                style={{
+                  background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8,
+                  padding: '8px 14px', fontSize: 13, fontWeight: 600, color: 'var(--text-primary)',
+                  cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6
+                }}
+              >
+                <Settings size={14} /> Settings
+              </button>
             </div>
           </div>
 
-          {/* Page Header */}
-          <div style={{ marginBottom: 28 }}>
+          {/* ─── Page Title Header (Matches Settings/Profile) ─── */}
+          <div style={{ marginBottom: 24 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 8 }}>
-              <div style={{ width: 46, height: 46, borderRadius: 12, background: 'rgba(236,72,153,0.12)', color: '#ec4899', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <Scissors size={22} />
+              <div style={{
+                width: 48, height: 48, borderRadius: 14,
+                background: 'rgba(236, 72, 153, 0.12)', color: '#ec4899',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+              }}>
+                <Scissors size={24} />
               </div>
               <div>
-                <h1 style={{ fontSize: 26, fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 4px 0', letterSpacing: '-0.4px' }}>PDF Crop &amp; Trim</h1>
-                <p style={{ fontSize: 13.5, color: 'var(--text-muted)', margin: 0 }}>Crop PDF pages visually, trim content precisely, and export clean PDF output.</p>
+                <h1 style={{ fontSize: 28, fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 4px 0', letterSpacing: '-0.5px' }}>
+                  PDF Crop & Trim Studio
+                </h1>
+                <p style={{ fontSize: 14, color: 'var(--text-muted)', margin: 0 }}>
+                  Crop PDF pages visually, trim margins precisely, and export clean print-ready vector PDF files.
+                </p>
               </div>
             </div>
-            <div style={{ display: 'flex', gap: 24, padding: '12px 0', borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)', marginTop: 16 }}>
+
+            {/* Quick Metrics Bar */}
+            <div style={{
+              display: 'flex', gap: 24, padding: '14px 20px',
+              border: '1px solid var(--border)', borderRadius: 12,
+              background: 'var(--bg-card)', marginTop: 18, overflowX: 'auto'
+            }}>
               {[
-                { label: 'Mode', value: 'Visual Crop', color: '#ec4899' },
-                { label: 'Pages', value: pdfDoc ? `${totalPages}` : '—', color: '#3b82f6' },
-                { label: 'Current', value: pdfDoc ? `${currentPage}` : '—', color: '#10b981' },
-                { label: 'Zoom', value: `${zoom}%`, color: '#8b5cf6' },
-              ].map(s => (
-                <div key={s.label}>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 2 }}>{s.label}</div>
-                  <div style={{ fontSize: 15, fontWeight: 800, color: s.color }}>{s.value}</div>
+                { label: 'Loaded PDF', value: pdfFile ? pdfFile.name.slice(0, 20) + '...' : 'No PDF Loaded', color: '#ec4899' },
+                { label: 'Total Pages', value: pdfDoc ? `${totalPages} Pages` : '0 Pages', color: '#3b82f6' },
+                { label: 'Current View', value: pdfDoc ? `Page ${currentPage}` : 'Page 1', color: '#10b981' },
+                { label: 'Zoom Level', value: `${zoom}%`, color: '#8b5cf6' },
+                { label: 'Crop Status', value: cropArea ? 'Area Selected' : 'Not Selected', color: '#f59e0b' },
+              ].map(stat => (
+                <div key={stat.label} style={{ minWidth: 120 }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 2 }}>
+                    {stat.label}
+                  </div>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: stat.color }}>{stat.value}</div>
                 </div>
               ))}
             </div>
           </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: pdfDoc ? '280px 1fr' : '1fr', gap: 20, alignItems: 'start' }}>
+          {/* ─── Horizontal Navigation Tabs ─── */}
+          <div style={{
+            display: 'flex', gap: 24, borderBottom: '1px solid var(--border)',
+            marginBottom: 28, overflowX: 'auto', paddingBottom: 2
+          }}>
+            {tabs.map((tab) => {
+              const isActive = activeTab === tab
+              return (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  style={{
+                    background: 'none', border: 'none', padding: '10px 4px 14px 4px',
+                    fontSize: 14, fontWeight: isActive ? 700 : 500,
+                    color: isActive ? 'var(--text-primary)' : 'var(--text-muted)',
+                    cursor: 'pointer', position: 'relative', whiteSpace: 'nowrap',
+                    transition: 'color 0.15s ease'
+                  }}
+                >
+                  {tab}
+                  {isActive && (
+                    <div style={{
+                      position: 'absolute', bottom: -1, left: 0, right: 0,
+                      height: 2.5, background: '#10b981', borderRadius: '2px 2px 0 0'
+                    }} />
+                  )}
+                </button>
+              )
+            })}
+          </div>
 
-                    {/* Left Panel */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                        {/* Upload */}
-                        <div className="card">
-                            <h3 style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: 16 }}>
-                                1. Upload PDF
-                            </h3>
-                            <div
-                                className="upload-zone"
-                                onClick={() => fileInputRef.current?.click()}
-                                onDrop={handleDrop}
-                                onDragOver={(e) => e.preventDefault()}
-                                style={{ padding: 20 }}
-                            >
-                                <div className="upload-icon" style={{ width: 40, height: 40, marginBottom: 10 }}>
-                                    <Upload size={18} />
-                                </div>
-                                <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>
-                                    {pdfFile ? pdfFile.name : 'Drop PDF here'}
-                                </div>
-                                <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                                    PDF documents up to 20MB. Drag, drop, and then draw a crop selection.
-                                </div>
-                            </div>
-                            <input ref={fileInputRef} type="file" accept=".pdf" onChange={handleFileChange} style={{ display: 'none' }} />
+          {/* ─── TAB 1: VISUAL CROP ─── */}
+          {activeTab === 'Visual Crop' && (
+            <div style={{ display: 'grid', gridTemplateColumns: pdfDoc ? '320px 1fr' : '1fr', gap: 24, alignItems: 'start' }}>
+              {/* Left Column Controls */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                {/* Upload Card */}
+                <div className="card" style={{ borderRadius: 16, padding: '22px 24px', background: 'var(--bg-card)' }}>
+                  <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 14 }}>
+                    Source PDF Document
+                  </h3>
+
+                  <div
+                    onClick={() => fileInputRef.current?.click()}
+                    onDrop={handleDrop}
+                    onDragOver={(e) => e.preventDefault()}
+                    style={{
+                      border: '1px dashed var(--border)', borderRadius: 12, padding: '26px 16px',
+                      textAlign: 'center', cursor: 'pointer', background: 'var(--bg-primary)'
+                    }}
+                  >
+                    <div style={{ width: 44, height: 44, borderRadius: 10, background: 'rgba(236,72,153,0.12)', color: '#ec4899', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
+                      <Upload size={22} />
+                    </div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>
+                      {pdfFile ? pdfFile.name : 'Upload PDF Document'}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                      Drag & Drop or browse (Up to 20MB)
+                    </div>
+                    <input ref={fileInputRef} type="file" accept=".pdf" onChange={handleFileChange} style={{ display: 'none' }} />
+                  </div>
+                </div>
+
+                {pdfDoc && (
+                  <>
+                    {/* Tool Mode Card */}
+                    <div className="card" style={{ borderRadius: 16, padding: '22px 24px', background: 'var(--bg-card)' }}>
+                      <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 14 }}>
+                        Crop Tool Modes
+                      </h3>
+
+                      <button
+                        onClick={() => setCropMode(!cropMode)}
+                        style={{
+                          width: '100%', padding: '12px 16px', borderRadius: 10,
+                          border: cropMode ? '2px solid #10b981' : '1px solid var(--border)',
+                          background: cropMode ? 'rgba(16,185,129,0.1)' : 'var(--bg-primary)',
+                          color: cropMode ? '#10b981' : 'var(--text-primary)',
+                          fontWeight: 700, fontSize: 13.5, cursor: 'pointer',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8
+                        }}
+                      >
+                        <Scissors size={16} /> {cropMode ? '✓ Drawing Mode Active' : 'Activate Drag Crop'}
+                      </button>
+                      <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8, textAlign: 'center' }}>
+                        Click & drag on the PDF preview to draw crop rectangle
+                      </p>
+
+                      {cropArea && (
+                        <button
+                          onClick={() => setCropArea(null)}
+                          className="btn btn-secondary btn-sm"
+                          style={{ width: '100%', marginTop: 8 }}
+                        >
+                          Clear Crop Selection
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Page Navigation */}
+                    <div className="card" style={{ borderRadius: 16, padding: '22px 24px', background: 'var(--bg-card)' }}>
+                      <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 14 }}>
+                        Page Navigation
+                      </h3>
+
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                        <button
+                          className="btn btn-sm btn-secondary"
+                          onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                          disabled={currentPage === 1}
+                        >
+                          <ChevronLeft size={16} />
+                        </button>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
+                          {currentPage} / {totalPages}
+                        </span>
+                        <button
+                          className="btn btn-sm btn-secondary"
+                          onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                          disabled={currentPage === totalPages}
+                        >
+                          <ChevronRight size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Right Canvas Viewer Stage */}
+              <div className="card" style={{ borderRadius: 16, padding: '24px 28px', background: 'var(--bg-card)', minHeight: 520 }}>
+                {pdfDoc ? (
+                  <>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#10b981', boxShadow: '0 0 6px #10b981' }} />
+                        <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>
+                          PDF Visual Stage
+                        </span>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <button className="icon-btn" onClick={() => setZoom(z => Math.max(50, z - 10))} title="Zoom Out">
+                          <ZoomOut size={16} />
+                        </button>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', minWidth: 40, textAlign: 'center' }}>
+                          {zoom}%
+                        </span>
+                        <button className="icon-btn" onClick={() => setZoom(z => Math.min(200, z + 10))} title="Zoom In">
+                          <ZoomIn size={16} />
+                        </button>
+                        <button className="icon-btn" onClick={() => setZoom(100)} title="Reset Zoom">
+                          <RotateCw size={14} />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div
+                      ref={containerRef}
+                      onMouseDown={handleMouseDown}
+                      onMouseMove={handleMouseMove}
+                      onMouseUp={handleMouseUp}
+                      style={{
+                        position: 'relative', background: '#1e2330', borderRadius: 12,
+                        padding: 16, border: '1px solid var(--border)', overflow: 'auto',
+                        display: 'flex', justifyContent: 'center', maxHeight: 600,
+                        cursor: cropMode ? 'crosshair' : 'default'
+                      }}
+                    >
+                      <canvas ref={canvasRef} style={{ display: 'block', maxWidth: '100%', boxShadow: '0 10px 30px rgba(0,0,0,0.35)', borderRadius: 4 }} />
+
+                      {/* Crop Selection Overlay */}
+                      {cropArea && (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            left: cropArea.x + 16,
+                            top: cropArea.y + 16,
+                            width: cropArea.width,
+                            height: cropArea.height,
+                            border: '2px dashed #10b981',
+                            background: 'rgba(16, 185, 129, 0.15)',
+                            pointerEvents: 'none'
+                          }}
+                        >
+                          <div style={{
+                            position: 'absolute', top: -24, left: 0,
+                            background: '#10b981', color: '#fff', fontSize: 11,
+                            padding: '2px 6px', borderRadius: 4, fontWeight: 700
+                          }}>
+                            {Math.round(cropArea.width)} × {Math.round(cropArea.height)} px
+                          </div>
                         </div>
-
-                        {/* Page Navigation */}
-                        {pdfDoc && (
-                            <div className="card">
-                                <h3 style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: 16 }}>
-                                    2. Page Navigation
-                                </h3>
-
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 12 }}>
-                                    <button
-                                        className="btn btn-sm btn-secondary"
-                                        onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-                                        disabled={currentPage <= 1}
-                                    >
-                                        <ChevronLeft size={14} />
-                                    </button>
-                                    <span style={{ fontSize: 13, minWidth: 80, textAlign: 'center' }}>
-                                        Page {currentPage} of {totalPages}
-                                    </span>
-                                    <button
-                                        className="btn btn-sm btn-secondary"
-                                        onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-                                        disabled={currentPage >= totalPages}
-                                    >
-                                        <ChevronRight size={14} />
-                                    </button>
-                                </div>
-
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                    <ZoomOut size={14} />
-                                    <input
-                                        type="range"
-                                        min="50"
-                                        max="200"
-                                        value={zoom}
-                                        onChange={(e) => setZoom(parseInt(e.target.value))}
-                                        style={{ flex: 1 }}
-                                    />
-                                    <ZoomIn size={14} />
-                                    <span style={{ fontSize: 11, minWidth: 35 }}>{zoom}%</span>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Crop Controls */}
-                        {pdfDoc && (
-                            <div className="card">
-                                <h3 style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: 16 }}>
-                                    3. Crop Tool
-                                </h3>
-
-                                <button
-                                    className={`btn ${cropMode ? 'btn-primary' : 'btn-secondary'}`}
-                                    onClick={() => setCropMode(!cropMode)}
-                                    style={{ width: '100%', marginBottom: 12 }}
-                                >
-                                    <Scissors size={14} />
-                                    {cropMode ? 'Exit Crop Mode' : 'Start Cropping'}
-                                </button>
-
-                                {cropArea && cropArea.width > 10 && cropArea.height > 10 && (
-                                    <div style={{
-                                        padding: 12,
-                                        background: 'var(--bg-primary)',
-                                        borderRadius: 8,
-                                        marginBottom: 12
-                                    }}>
-                                        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Crop Area:</div>
-                                        <div style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'grid', gap: 4 }}>
-                                            <div>Width: {Math.round(cropArea.width)}px</div>
-                                            <div>Height: {Math.round(cropArea.height)}px</div>
-                                            <div>X: {Math.round(cropArea.x)}</div>
-                                            <div>Y: {Math.round(cropArea.y)}</div>
-                                        </div>
-                                    </div>
-                                )}
-
-                                <button
-                                    className="btn btn-secondary"
-                                    onClick={resetCrop}
-                                    style={{ width: '100%', marginBottom: 8 }}
-                                    disabled={!cropArea}
-                                >
-                                    <RotateCw size={14} />
-                                    Reset Crop
-                                </button>
-
-                                <button
-                                    className="btn btn-primary"
-                                    onClick={downloadCroppedPdf}
-                                    disabled={!cropArea || cropArea.width < 10 || cropArea.height < 10 || loading}
-                                    style={{ width: '100%' }}
-                                >
-                                    {loading ? (
-                                        <RotateCw size={14} className="animate-spin" />
-                                    ) : (
-                                        <Download size={14} />
-                                    )}
-                                    Download Cropped PDF
-                                </button>
-                            </div>
-                        )}
+                      )}
                     </div>
 
-                    {/* Preview Panel */}
-                    <div>
-                        {loading && !renderedPage && (
-                            <div className="card" style={{ minHeight: 500, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                <div style={{ textAlign: 'center' }}>
-                                    <div className="animate-spin" style={{ width: 40, height: 40, border: '3px solid var(--border)', borderTopColor: 'var(--accent-purple)', borderRadius: '50%', margin: '0 auto 16px' }} />
-                                    <p>Loading PDF...</p>
-                                </div>
-                            </div>
-                        )}
+                    <div style={{
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                      marginTop: 18, padding: '14px 18px', background: 'var(--bg-primary)',
+                      borderRadius: 12, border: '1px solid var(--border)'
+                    }}>
+                      <div>
+                        <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-primary)' }}>
+                          {cropArea ? 'Crop Boundary Confirmed' : 'Drag on canvas to define crop box'}
+                        </div>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                          Original resolution will be fully preserved in output
+                        </div>
+                      </div>
 
-                        {pdfDoc && (
-                            <div className="card" style={{ minHeight: 600 }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                        <div style={{
-                                            width: 8, height: 8, borderRadius: '50%',
-                                            background: cropMode ? '#f59e0b' : '#34d399'
-                                        }} />
-                                        <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>
-                                            {cropMode ? 'Crop Mode - Drag to Select Area' : 'PDF Preview'}
-                                        </span>
-                                    </div>
-                                    <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                                        Page {currentPage} of {totalPages}
-                                    </div>
-                                </div>
-
-                                {loading && (
-                                    <div style={{ 
-                                        position: 'absolute', inset: 0, zIndex: 10, 
-                                        background: 'rgba(255,255,255,0.7)', 
-                                        display: 'flex', alignItems: 'center', justifyContent: 'center' 
-                                    }}>
-                                        <div className="animate-spin" style={{ 
-                                            width: 40, height: 40, border: '3px solid var(--border)', 
-                                            borderTopColor: 'var(--accent-purple)', borderRadius: '50%' 
-                                        }} />
-                                    </div>
-                                )}
-
-                                <div
-                                    ref={containerRef}
-                                    style={{
-                                        position: 'relative',
-                                        background: '#525659',
-                                        borderRadius: 8,
-                                        overflow: 'auto',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        minHeight: 500,
-                                        padding: 20
-                                    }}
-                                    onMouseDown={handleMouseDown}
-                                    onMouseMove={handleMouseMove}
-                                    onMouseUp={handleMouseUp}
-                                    onMouseLeave={handleMouseUp}
-                                >
-                                    <div style={{ position: 'relative', boxShadow: '0 4px 20px rgba(0,0,0,0.4)', visibility: renderedPage ? 'visible' : 'hidden' }}>
-                                        <canvas ref={canvasRef} style={{ display: 'block' }} />
-
-                                        {/* Crop Area Overlay */}
-                                        {cropMode && cropArea && cropArea.width > 0 && cropArea.height > 0 && (
-                                            <>
-                                                {/* Dark overlay outside crop area */}
-                                                <div style={{
-                                                    position: 'absolute',
-                                                    top: 0,
-                                                    left: 0,
-                                                    right: 0,
-                                                    height: cropArea.y,
-                                                    background: 'rgba(0,0,0,0.5)',
-                                                    pointerEvents: 'none'
-                                                }} />
-                                                <div style={{
-                                                    position: 'absolute',
-                                                    top: cropArea.y,
-                                                    left: 0,
-                                                    width: cropArea.x,
-                                                    height: cropArea.height,
-                                                    background: 'rgba(0,0,0,0.5)',
-                                                    pointerEvents: 'none'
-                                                }} />
-                                                <div style={{
-                                                    position: 'absolute',
-                                                    top: cropArea.y,
-                                                    right: 0,
-                                                    width: pageSize.width - cropArea.x - cropArea.width,
-                                                    height: cropArea.height,
-                                                    background: 'rgba(0,0,0,0.5)',
-                                                    pointerEvents: 'none'
-                                                }} />
-                                                <div style={{
-                                                    position: 'absolute',
-                                                    bottom: 0,
-                                                    left: 0,
-                                                    right: 0,
-                                                    height: pageSize.height - cropArea.y - cropArea.height,
-                                                    background: 'rgba(0,0,0,0.5)',
-                                                    pointerEvents: 'none'
-                                                }} />
-
-                                                {/* Crop border */}
-                                                <div style={{
-                                                    position: 'absolute',
-                                                    left: cropArea.x,
-                                                    top: cropArea.y,
-                                                    width: cropArea.width,
-                                                    height: cropArea.height,
-                                                    border: '2px solid #7c5cf6',
-                                                    background: 'transparent',
-                                                    pointerEvents: 'none'
-                                                }} />
-
-                                                {/* Crop dimensions label */}
-                                                <div style={{
-                                                    position: 'absolute',
-                                                    top: cropArea.y - 28,
-                                                    left: cropArea.x,
-                                                    background: '#7c5cf6',
-                                                    color: 'white',
-                                                    padding: '4px 8px',
-                                                    borderRadius: 4,
-                                                    fontSize: 11,
-                                                    fontWeight: 600,
-                                                    whiteSpace: 'nowrap'
-                                                }}>
-                                                    {Math.round(cropArea.width)} × {Math.round(cropArea.height)} px
-                                                </div>
-                                            </>
-                                        )}
-                                    </div>
-                                </div>
-
-                                {cropMode && (
-                                    <div style={{ marginTop: 16, padding: 12, background: 'rgba(245,158,11,0.1)', borderRadius: 8, border: '1px solid rgba(245,158,11,0.3)' }}>
-                                        <p style={{ fontSize: 13, color: '#f59e0b', margin: 0 }}>
-                                            <strong>Instructions:</strong> Click and drag on the PDF to select the area you want to crop.
-                                            Make sure to select the entire area you need.
-                                        </p>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-
-                        {!pdfDoc && !loading && (
-                            <div className="card" style={{ minHeight: 500, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                                <Scissors size={64} strokeWidth={1} style={{ marginBottom: 16, opacity: 0.5 }} />
-                                <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Upload PDF to Start</h3>
-                                <p style={{ fontSize: 14, color: 'var(--text-secondary)', textAlign: 'center', maxWidth: 400 }}>
-                                    Drag and drop your PDF file or click the upload button to get started
-                                </p>
-                            </div>
-                        )}
+                      <button
+                        onClick={handleCropAndExport}
+                        disabled={loading || !cropArea}
+                        style={{
+                          background: '#10b981', color: '#ffffff', border: 'none', borderRadius: 8,
+                          padding: '8px 18px', fontSize: 13.5, fontWeight: 600, cursor: 'pointer',
+                          display: 'inline-flex', alignItems: 'center', gap: 6,
+                          opacity: (loading || !cropArea) ? 0.6 : 1
+                        }}
+                      >
+                        <Download size={15} /> {loading ? 'Processing...' : 'Download Cropped PDF'}
+                      </button>
                     </div>
-                </div>
-
-                {/* Features */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginTop: 24 }}>
-                    <div className="card">
-                        <div style={{ fontSize: 24, marginBottom: 12 }}>📤</div>
-                        <h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>Upload PDF</h4>
-                        <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: 0 }}>
-                            Drag &amp; drop or browse to upload your PDF file
-                        </p>
+                  </>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 380, color: 'var(--text-muted)', gap: 14 }}>
+                    <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'rgba(255,255,255,0.04)', border: '1px dashed var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Scissors size={28} strokeWidth={1.5} />
                     </div>
-                    <div className="card">
-                        <div style={{ fontSize: 24, marginBottom: 12 }}>✂️</div>
-                        <h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>Select Area</h4>
-                        <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: 0 }}>
-                            Click and drag to select the area you want to crop
-                        </p>
-                    </div>
-                    <div className="card">
-                        <div style={{ fontSize: 24, marginBottom: 12 }}>💾</div>
-                        <h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>Download</h4>
-                        <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: 0 }}>
-                            Get your cropped PDF instantly
-                        </p>
-                    </div>
-                </div>
-
-          {/* Creator Suite Quick Access */}
-          <div style={{ marginTop: 40, paddingTop: 28, borderTop: '1px solid var(--border)' }}>
-            <div style={{ marginBottom: 14 }}>
-              <h3 style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 2px 0' }}>Creator Suite</h3>
-              <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: 0 }}>Jump to another tool</p>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>No PDF Loaded</div>
+                    <p style={{ fontSize: 13, color: 'var(--text-secondary)', maxWidth: 320, textAlign: 'center', margin: 0 }}>
+                      Drop a PDF into the left upload area to inspect pages and visually select crop boundaries.
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
-              {[
-                { label: 'My Photos', href: '/photos', icon: ImageIcon, color: '#10b981', desc: 'AI background removal' },
-                { label: 'Create Sheet', href: '/create-sheet', icon: Grid2x2, color: '#3b82f6', desc: 'Passport photo sheets' },
-                { label: 'PVC Card', href: '/pvc-card', icon: CreditCard, color: '#8b5cf6', desc: 'Badge & ID cards' },
-                { label: 'PDF Converter', href: '/pdf-converter', icon: FileText, color: '#f59e0b', desc: 'Convert to PDF' },
-                { label: 'Token Enter', href: '/token/create', icon: Coins, color: '#06b6d4', desc: 'Claim vouchers' },
-              ].map(tool => {
+          )}
+
+          {/* ─── TAB 2: TRIM & MARGINS ─── */}
+          {activeTab === 'Trim & Margins' && (
+            <div className="card" style={{ borderRadius: 16, padding: '24px 28px', background: 'var(--bg-card)' }}>
+              <h3 style={{ fontSize: 17, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8 }}>
+                Numerical Margin Trimming
+              </h3>
+              <p style={{ fontSize: 13.5, color: 'var(--text-muted)', marginBottom: 24 }}>
+                Shave uniform borders from all sides of the page automatically.
+              </p>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
+                {[
+                  { label: 'Top Margin', value: marginTop, setter: setMarginTop },
+                  { label: 'Right Margin', value: marginRight, setter: setMarginRight },
+                  { label: 'Bottom Margin', value: marginBottom, setter: setMarginBottom },
+                  { label: 'Left Margin', value: marginLeft, setter: setMarginLeft },
+                ].map(m => (
+                  <div key={m.label} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 18, background: 'var(--bg-primary)' }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>{m.label}</div>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: '#ec4899', marginBottom: 8 }}>{m.value} mm</div>
+                    <input type="range" className="slider" min={0} max={50} value={m.value} onChange={(e) => m.setter(Number(e.target.value))} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ─── TAB 3: PAGE MANAGER ─── */}
+          {activeTab === 'Page Manager' && (
+            <div className="card" style={{ borderRadius: 16, padding: '24px 28px', background: 'var(--bg-card)' }}>
+              <h3 style={{ fontSize: 17, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8 }}>
+                Multi-Page Crop Scope
+              </h3>
+              <p style={{ fontSize: 13.5, color: 'var(--text-muted)', marginBottom: 24 }}>
+                Choose which pages in the document should receive the active crop coordinates.
+              </p>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
+                {[
+                  { id: 'current', label: 'Current Page Only', desc: `Apply crop only to Page ${currentPage}` },
+                  { id: 'all', label: 'All Pages in Document', desc: `Batch-crop entire document (${totalPages} pages)` },
+                  { id: 'odd', label: 'Odd Pages Only', desc: 'Pages 1, 3, 5, 7... for bookbinding' },
+                  { id: 'even', label: 'Even Pages Only', desc: 'Pages 2, 4, 6, 8... for bookbinding' },
+                ].map(scope => (
+                  <div
+                    key={scope.id}
+                    onClick={() => setApplyToPages(scope.id as any)}
+                    style={{
+                      border: applyToPages === scope.id ? '2px solid #10b981' : '1px solid var(--border)',
+                      borderRadius: 12, padding: 18, cursor: 'pointer',
+                      background: 'var(--bg-primary)'
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{scope.label}</span>
+                      {applyToPages === scope.id && <Check size={16} color="#10b981" />}
+                    </div>
+                    <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: 0 }}>{scope.desc}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ─── TAB 4: EXPORT OPTIONS ─── */}
+          {activeTab === 'Export Options' && (
+            <div className="card" style={{ borderRadius: 16, padding: '24px 28px', background: 'var(--bg-card)' }}>
+              <h3 style={{ fontSize: 17, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8 }}>
+                Export Quality & Rendering Options
+              </h3>
+              <p style={{ fontSize: 13.5, color: 'var(--text-muted)', marginBottom: 24 }}>
+                Configure vector fidelity and layer optimization for output documents.
+              </p>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {[
+                  { title: 'Preserve Vector Paths', desc: 'Keep embedded fonts and vector graphics razor-sharp without rasterizing.', checked: true },
+                  { title: 'Strip Metadata & Bookmarks', desc: 'Reduce file footprint by dropping hidden PDF author metadata.', checked: false },
+                  { title: 'Auto-Rotate to Normal Orientation', desc: 'Normalize landscape/portrait orientations before saving.', checked: true },
+                ].map(opt => (
+                  <label key={opt.title} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: 16, borderRadius: 10, background: 'var(--bg-primary)', border: '1px solid var(--border)', cursor: 'pointer' }}>
+                    <input type="checkbox" defaultChecked={opt.checked} style={{ accentColor: '#10b981', marginTop: 3, width: 16, height: 16 }} />
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{opt.title}</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{opt.desc}</div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ─── Creator Suite Navigation Footer (Exact Match to Settings/Profile) ─── */}
+          <div style={{ marginTop: 48, paddingTop: 32, borderTop: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div>
+                <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+                  Explore Creator Suite
+                </h3>
+                <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '2px 0 0 0' }}>
+                  Quick switch to another photo creation or document utility tool
+                </p>
+              </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
+              {creatorTools.map(tool => {
                 const Icon = tool.icon
                 return (
-                  <div key={tool.label} onClick={() => router.push(tool.href)} className="card" style={{ padding: '14px 16px', borderRadius: 12, cursor: 'pointer' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                      <div style={{ width: 32, height: 32, borderRadius: 8, background: `${tool.color}18`, color: tool.color, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <Icon size={16} />
+                  <div
+                    key={tool.label}
+                    onClick={() => router.push(tool.href)}
+                    className="card"
+                    style={{
+                      padding: '16px 18px', borderRadius: 12, cursor: 'pointer',
+                      border: tool.current ? `1.5px solid ${tool.color}` : '1px solid var(--border)',
+                      background: tool.current ? `${tool.color}0a` : 'var(--bg-card)',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                      <div style={{
+                        width: 34, height: 34, borderRadius: 8,
+                        background: `${tool.color}15`, color: tool.color,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center'
+                      }}>
+                        <Icon size={18} />
                       </div>
-                      <ChevronRight size={13} color="var(--text-muted)" />
+                      <ChevronRight size={14} color="var(--text-muted)" />
                     </div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>{tool.label}</div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{tool.desc}</div>
+                    <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 3 }}>
+                      {tool.label}
+                    </div>
+                    <div style={{ fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.4 }}>
+                      {tool.desc}
+                    </div>
                   </div>
                 )
               })}

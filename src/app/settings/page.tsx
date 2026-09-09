@@ -194,7 +194,7 @@ export default function SettingsPage() {
 
   return (
     <DashboardLayout>
-      <div style={{ maxWidth: 1120, margin: '0 auto', paddingBottom: 60 }}>
+      <div style={{ maxWidth: 1120, paddingBottom: 60 }}>
 
         {/* Toast Alert */}
         {saveToast && (

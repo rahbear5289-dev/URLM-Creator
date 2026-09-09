@@ -7,7 +7,7 @@ import {
   LayoutDashboard, Image as ImageIcon, Grid2x2, CreditCard, FileText,
   User, Bell, Settings, LogOut, HelpCircle, Zap,
   Shield, Coins, Scissors, Lock, ChevronLeft, ChevronRight,
-  PanelLeftClose, PanelLeftOpen
+  PanelLeftClose, PanelLeftOpen, PenTool
 } from 'lucide-react'
 
 const navItems = [
@@ -16,6 +16,7 @@ const navItems = [
   { href: '/create-sheet', label: 'Create Sheet', icon: Grid2x2, lockable: true },
   { href: '/pvc-card', label: 'PVC Card', icon: CreditCard, lockable: true },
   { href: '/pdf-converter', label: 'PDF Converter', icon: FileText, lockable: true },
+  { href: '/pdf-editor', label: 'PDF Editor', icon: PenTool, lockable: true },
   { href: '/crop', label: 'PDF Crop', icon: Scissors, lockable: true },
   { href: '/token/create', label: 'Token Enter', icon: Coins },
   { href: '/profile', label: 'Profile', icon: User },

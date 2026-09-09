@@ -89,11 +89,32 @@ export default function LoginPage() {
     setLoading(false)
   }
 
+  const [socialLoading, setSocialLoading] = useState<'google' | 'facebook' | null>(null)
+
   const handleGoogle = async () => {
-    await supabase.auth.signInWithOAuth({
+    setSocialLoading('google')
+    setError('')
+    const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo: `${window.location.origin}/dashboard` }
     })
+    if (error) {
+      setError(error.message)
+      setSocialLoading(null)
+    }
+  }
+
+  const handleFacebook = async () => {
+    setSocialLoading('facebook')
+    setError('')
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'facebook',
+      options: { redirectTo: `${window.location.origin}/dashboard` }
+    })
+    if (error) {
+      setError(error.message)
+      setSocialLoading(null)
+    }
   }
 
   return (
@@ -301,8 +322,9 @@ export default function LoginPage() {
                     type="button"
                     onClick={handleGoogle}
                     className="sentinel-social-btn"
+                    disabled={socialLoading !== null}
                   >
-                    <span>Sign in with Google</span>
+                    <span>{socialLoading === 'google' ? 'Connecting to Google...' : 'Sign in with Google'}</span>
                     {/* Official Google G Logo */}
                     <svg width="18" height="18" viewBox="0 0 24 24">
                       <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"/>
@@ -314,10 +336,11 @@ export default function LoginPage() {
 
                   <button
                     type="button"
-                    onClick={() => alert('Facebook sign in can be configured in your Supabase Auth providers.')}
+                    onClick={handleFacebook}
                     className="sentinel-social-btn"
+                    disabled={socialLoading !== null}
                   >
-                    <span>Sign in with Facebook</span>
+                    <span>{socialLoading === 'facebook' ? 'Connecting to Facebook...' : 'Sign in with Facebook'}</span>
                     {/* Official Facebook (f) Logo */}
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="#1877F2">
                       <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>

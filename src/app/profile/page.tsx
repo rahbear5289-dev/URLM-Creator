@@ -201,7 +201,7 @@ export default function ProfilePage() {
 
   return (
     <DashboardLayout>
-      <div style={{ maxWidth: 1100, margin: '0 auto', paddingBottom: 60 }}>
+      <div style={{ maxWidth: 1100, paddingBottom: 60 }}>
         
         {/* Top Breadcrumb & Action Row (Exact Match to Image 1) */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>

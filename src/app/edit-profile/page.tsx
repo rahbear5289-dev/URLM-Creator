@@ -182,7 +182,7 @@ export default function EditProfilePage() {
 
   return (
     <DashboardLayout>
-      <div style={{ maxWidth: 840, margin: '0 auto', paddingBottom: 60 }}>
+      <div style={{ maxWidth: 840, paddingBottom: 60 }}>
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 32 }}>
           <button 

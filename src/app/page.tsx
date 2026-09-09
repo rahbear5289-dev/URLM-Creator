@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import Script from 'next/script'
 import { supabase } from '@/lib/supabase'
 import {
   Play, MoreHorizontal, ArrowUpRight, Sparkles, Check, ChevronRight,
@@ -78,12 +79,241 @@ const partnerLogos: LogoItem[] = [
   }
 ]
 
+// ─── UrlmCreatorGlow: Cursor-proximity neon glow SVG text ──────────────────
+function UrlmCreatorGlow() {
+  const svgRef = useRef<SVGSVGElement>(null)
+  const maskGradRef = useRef<SVGRadialGradientElement>(null)
+  const glowGradRef = useRef<SVGRadialGradientElement>(null)
+  const animFrameRef = useRef<number>(0)
+
+  useEffect(() => {
+    const svg = svgRef.current
+    if (!svg) return
+
+    let targetCx = 50, targetCy = 50
+    let currentCx = 50, currentCy = 50
+
+    const onMove = (e: MouseEvent | TouchEvent) => {
+      const rect = svg.getBoundingClientRect()
+      let clientX: number, clientY: number
+      if ('touches' in e) {
+        clientX = e.touches[0].clientX
+        clientY = e.touches[0].clientY
+      } else {
+        clientX = (e as MouseEvent).clientX
+        clientY = (e as MouseEvent).clientY
+      }
+      targetCx = ((clientX - rect.left) / rect.width) * 100
+      targetCy = ((clientY - rect.top) / rect.height) * 100
+    }
+
+    const onLeave = () => {
+      targetCx = 50
+      targetCy = 50
+    }
+
+    const animate = () => {
+      // Smooth lerp toward cursor
+      currentCx += (targetCx - currentCx) * 0.1
+      currentCy += (targetCy - currentCy) * 0.1
+
+      if (maskGradRef.current) {
+        maskGradRef.current.setAttribute('cx', `${currentCx}%`)
+        maskGradRef.current.setAttribute('cy', `${currentCy}%`)
+      }
+      if (glowGradRef.current) {
+        glowGradRef.current.setAttribute('cx', `${currentCx}%`)
+        glowGradRef.current.setAttribute('cy', `${currentCy}%`)
+      }
+      animFrameRef.current = requestAnimationFrame(animate)
+    }
+
+    svg.addEventListener('mousemove', onMove)
+    svg.addEventListener('touchmove', onMove, { passive: true })
+    svg.addEventListener('mouseleave', onLeave)
+    animFrameRef.current = requestAnimationFrame(animate)
+
+    return () => {
+      svg.removeEventListener('mousemove', onMove)
+      svg.removeEventListener('touchmove', onMove)
+      svg.removeEventListener('mouseleave', onLeave)
+      cancelAnimationFrame(animFrameRef.current)
+    }
+  }, [])
+
+  return (
+    <div
+      className="flex w-full justify-center items-center py-12 md:py-20 mb-12 border-b border-white/5 relative"
+      style={{ cursor: 'crosshair' }}
+    >
+      <svg
+        ref={svgRef}
+        width="100%"
+        height="100%"
+        viewBox="0 0 900 200"
+        xmlns="http://www.w3.org/2000/svg"
+        className="select-none"
+        style={{ overflow: 'visible' }}
+      >
+        <defs>
+          {/* ── Neon lightning glow filter ── */}
+          <filter id="urlmLightning" x="-30%" y="-60%" width="160%" height="220%">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="blur1" />
+            <feGaussianBlur in="SourceGraphic" stdDeviation="14" result="blur2" />
+            <feGaussianBlur in="SourceGraphic" stdDeviation="28" result="blur3" />
+            <feMerge>
+              <feMergeNode in="blur3" />
+              <feMergeNode in="blur2" />
+              <feMergeNode in="blur1" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+
+          {/* ── Softer outer aura ── */}
+          <filter id="urlmAura" x="-40%" y="-80%" width="180%" height="260%">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="22" result="aura" />
+            <feMerge>
+              <feMergeNode in="aura" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+
+          {/* ── Radial gradient for proximity reveal mask ── */}
+          <radialGradient
+            id="urlmRevealMask"
+            ref={maskGradRef}
+            gradientUnits="userSpaceOnUse"
+            cx="50%"
+            cy="50%"
+            r="45%"
+          >
+            <stop offset="0%" stopColor="white" stopOpacity="1" />
+            <stop offset="55%" stopColor="white" stopOpacity="0.7" />
+            <stop offset="100%" stopColor="black" stopOpacity="0" />
+          </radialGradient>
+
+          {/* ── Mask that clips the glow to near-cursor region ── */}
+          <mask id="urlmMask">
+            <rect x="0" y="0" width="100%" height="100%" fill="url(#urlmRevealMask)" />
+          </mask>
+
+          {/* ── Radial gradient for the neon green color sweep ── */}
+          <radialGradient
+            id="urlmGlowGrad"
+            ref={glowGradRef}
+            gradientUnits="userSpaceOnUse"
+            cx="50%"
+            cy="50%"
+            r="48%"
+          >
+            <stop offset="0%" stopColor="#b9ff4b" stopOpacity="1" />
+            <stop offset="30%" stopColor="#84cc16" stopOpacity="0.9" />
+            <stop offset="70%" stopColor="#4ade80" stopOpacity="0.4" />
+            <stop offset="100%" stopColor="#16a34a" stopOpacity="0" />
+          </radialGradient>
+        </defs>
+
+        {/* ── Layer 1: Dim base outline (always visible) ── */}
+        <text
+          x="50%"
+          y="54%"
+          textAnchor="middle"
+          dominantBaseline="middle"
+          fill="transparent"
+          stroke="rgba(255,255,255,0.10)"
+          strokeWidth="1.2"
+          textLength={840}
+          lengthAdjust="spacingAndGlyphs"
+          style={{
+            fontSize: 96,
+            fontWeight: 900,
+            fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif',
+            letterSpacing: '-2px',
+          }}
+        >
+          URLM CREATOR
+        </text>
+
+        {/* ── Layer 2: Outer aura glow (masked to cursor proximity) ── */}
+        <text
+          x="50%"
+          y="54%"
+          textAnchor="middle"
+          dominantBaseline="middle"
+          fill="transparent"
+          stroke="url(#urlmGlowGrad)"
+          strokeWidth="2"
+          mask="url(#urlmMask)"
+          filter="url(#urlmAura)"
+          textLength={840}
+          lengthAdjust="spacingAndGlyphs"
+          style={{
+            fontSize: 96,
+            fontWeight: 900,
+            fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif',
+            letterSpacing: '-2px',
+          }}
+        >
+          URLM CREATOR
+        </text>
+
+        {/* ── Layer 3: Sharp bright stroke with lightning filter ── */}
+        <text
+          x="50%"
+          y="54%"
+          textAnchor="middle"
+          dominantBaseline="middle"
+          fill="transparent"
+          stroke="url(#urlmGlowGrad)"
+          strokeWidth="1.5"
+          mask="url(#urlmMask)"
+          filter="url(#urlmLightning)"
+          textLength={840}
+          lengthAdjust="spacingAndGlyphs"
+          style={{
+            fontSize: 96,
+            fontWeight: 900,
+            fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif',
+            letterSpacing: '-2px',
+          }}
+        >
+          URLM CREATOR
+        </text>
+
+        {/* ── Layer 4: Ultra-bright core stroke (no filter — crisp edge) ── */}
+        <text
+          x="50%"
+          y="54%"
+          textAnchor="middle"
+          dominantBaseline="middle"
+          fill="transparent"
+          stroke="#d9ff6a"
+          strokeWidth="0.8"
+          mask="url(#urlmMask)"
+          textLength={840}
+          lengthAdjust="spacingAndGlyphs"
+          style={{
+            fontSize: 96,
+            fontWeight: 900,
+            fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif',
+            letterSpacing: '-2px',
+          }}
+        >
+          URLM CREATOR
+        </text>
+      </svg>
+    </div>
+  )
+}
+
 export default function Home() {
+
   const router = useRouter()
   const [session, setSession] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [showDemoModal, setShowDemoModal] = useState(false)
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly')
+  const [scrolled, setScrolled] = useState(false)
 
   // Movable / Draggable Microsoft Job Card State
   const [cardPos, setCardPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
@@ -139,6 +369,14 @@ export default function Home() {
     return () => subscription.unsubscribe()
   }, [])
 
+  // Fixed navbar state: shrink + stronger glass once the page is scrolled
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 30)
+    onScroll()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
+
   const handleGetStarted = () => {
     if (session) {
       router.push('/dashboard')
@@ -153,17 +391,28 @@ export default function Home() {
       <div className="hero-glow-bg" />
       <div className="hero-grid-pattern" />
 
-      {/* Floating Pill Top Navbar */}
-      <header className="hero-navbar-wrap">
-        <nav className="hero-navbar">
-          {/* Brand Logo & Name */}
+      {/* Floating Pill Top Navbar (glass, fixed on scroll) */}
+      <header className={`hero-navbar-wrap${scrolled ? ' is-scrolled' : ''}`}>
+        <nav className={`hero-navbar${scrolled ? ' is-scrolled' : ''}`}>
+          {/* Brand Logo & Name — letters drop in from the top on load */}
           <a href="/" className="hero-brand">
             <div className="hero-brand-logo">
               <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
               </svg>
             </div>
-            <span>Hirslams</span>
+            <span className="hero-brand-name" aria-label="Hirslams">
+              {'Hirslams'.split('').map((ch, i) => (
+                <span
+                  key={i}
+                  className="brand-letter"
+                  aria-hidden="true"
+                  style={{ animationDelay: `${0.15 + i * 0.06}s` }}
+                >
+                  {ch}
+                </span>
+              ))}
+            </span>
           </a>
 
           {/* Navigation Links */}
@@ -877,33 +1126,11 @@ export default function Home() {
       </section>
 
       {/* 8. Neon Glow Text SVG Section */}
+      {/* ─── URLM CREATOR Cursor-Proximity Neon Glow Section ─── */}
       <section className="landing-section" style={{ paddingBottom: 20 }}>
-        <div className="flex w-full justify-center items-center py-12 md:py-20 mb-12 border-b border-white/5 relative">
-          <div className="absolute inset-0 pointer-events-none"></div>
-          <svg width="100%" height="100%" viewBox="0 0 300 100" xmlns="http://www.w3.org/2000/svg" className="select-none">
-            <defs>
-              <filter id="neonGlow" x="-20%" y="-20%" width="140%" height="140%">
-                <feGaussianBlur stdDeviation="3" result="blur"></feGaussianBlur>
-                <feMerge>
-                  <feMergeNode in="blur"></feMergeNode>
-                  <feMergeNode in="SourceGraphic"></feMergeNode>
-                </feMerge>
-              </filter>
-              <linearGradient id="textGradient" gradientUnits="userSpaceOnUse" cx="50%" cy="50%" r="25%"></linearGradient>
-              <radialGradient id="revealMask" gradientUnits="userSpaceOnUse" r="20%" cx="57.011915673693856%" cy="39.589241213371146%">
-                <stop offset="0%" stopColor="white"></stop>
-                <stop offset="100%" stopColor="black"></stop>
-              </radialGradient>
-              <mask id="textMask">
-                <rect x="0" y="0" width="100%" height="100%" fill="url(#revealMask)"></rect>
-              </mask>
-            </defs>
-            <text x="50%" y="50%" textAnchor="middle" dominantBaseline="middle" strokeWidth="0.3" className="fill-transparent stroke-neutral-200 font-[helvetica] text-7xl font-bold dark:stroke-neutral-800" style={{ opacity: 0 }}>IRIS AI</text>
-            <text x="50%" y="50%" textAnchor="middle" dominantBaseline="middle" strokeWidth="0.3" className="fill-transparent stroke-neutral-200 font-[helvetica] text-7xl font-bold dark:stroke-neutral-800" strokeDashoffset="0" strokeDasharray="1000">IRIS AI</text>
-            <text x="50%" y="50%" textAnchor="middle" dominantBaseline="middle" stroke="url(#textGradient)" strokeWidth="0.6" mask="url(#textMask)" className="fill-transparent font-[helvetica] text-7xl font-bold" filter="url(#neonGlow)">URLM CREATOR</text>
-          </svg>
-        </div>
+        <UrlmCreatorGlow />
       </section>
+
 
       {/* 9. Comprehensive Modern Footer */}
       <footer className="landing-footer">
@@ -1040,6 +1267,9 @@ export default function Home() {
           </div>
         </div>
       )}
+
+      {/* Tidio Live Chat Widget */}
+      <Script src="//code.tidio.co/qtpaphs7w8el41yvtkrf9zvtuyrw7alc.js" strategy="afterInteractive" />
     </div>
   )
 }

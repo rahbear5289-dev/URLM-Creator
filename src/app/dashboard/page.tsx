@@ -11,7 +11,7 @@ import {
   Info, Check, ChevronRight, HardDrive, RefreshCw,
   Camera, FileText, Grid2x2, Image as ImageIcon, Lock, Scissors,
   CreditCard, Sparkles, Upload, ArrowUpRight, ExternalLink,
-  Activity, TrendingUp, Radio
+  Activity, TrendingUp, Radio, PenTool
 } from 'lucide-react'
 
 type PeriodType = 'Daily' | 'Weekly' | 'Monthly'
@@ -105,6 +105,7 @@ const creativeTools = [
   { title: 'Create Sheet', desc: 'Passport sheets 4×6 & A4', icon: Grid2x2, href: '/create-sheet', color: '#84cc16' },
   { title: 'PVC Card', desc: 'Custom PVC ID card templates', icon: CreditCard, href: '/pvc-card', color: '#3b82f6' },
   { title: 'PDF Converter', desc: 'High-res print-ready PDFs', icon: FileText, href: '/pdf-converter', color: '#06b6d4' },
+  { title: 'PDF Editor', desc: 'In-line text editing on canvas', icon: PenTool, href: '/pdf-editor', color: '#8b5cf6' },
   { title: 'PDF Crop', desc: 'Precision crop for certificates', icon: Scissors, href: '/crop', color: '#ec4899' },
 ]
 
@@ -169,7 +170,7 @@ export default function DashboardPage() {
   const displayName = user?.user_metadata?.full_name?.split(' ')[0] ?? user?.email?.split('@')[0] ?? 'User'
 
   const handleToolClick = (href: string) => {
-    if (isLocked && ['/photos', '/create-sheet', '/pvc-card', '/pdf-converter', '/crop'].includes(href)) {
+    if (isLocked && ['/photos', '/create-sheet', '/pvc-card', '/pdf-converter', '/pdf-editor', '/crop'].includes(href)) {
       router.push('/token/create')
       return
     }
